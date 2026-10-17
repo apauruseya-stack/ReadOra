@@ -674,17 +674,25 @@ class _HomeViewState extends State<_HomeView>
               ),
             ),
             const _IncognitoChip(),
+            // All the leftover space, in one place, between the brand and the
+            // actions.
+            //
+            // It used to be split between the wordmark and the switcher slot,
+            // because both were Flexible. The wordmark is left-aligned inside
+            // its own share, so it looked correct while the actions were left
+            // stranded in the middle of the header with empty space to their
+            // right - a header that reads as though the buttons belong to the
+            // title. One flexible child absorbs the remainder and the actions
+            // sit where an action group belongs.
+            const Spacer(),
             _headerDownloadButton(),
             _notificationBell(context),
             const HomeSearchAction(),
             const HomeNovelSearchAction(),
-            // Flexible for the same reason, and for a second one: the chip is
-            // capped at 150px to keep it from squeezing the wordmark, but that
-            // cap is the widest thing in the row. Letting it ellipsize inside
-            // its own share is what keeps a narrow phone from overflowing at
-            // all. The five buttons above stay rigid - a header that overflows
-            // is a bug, but a 40dp tap target is a worse one.
-            const Flexible(child: HomeSourceSwitcherSlot()),
+            // Rigid: a Flexible here would take a share of the leftover away
+            // from the Spacer and put the actions back in the middle. The slot
+            // already renders nothing when there is no switcher to show.
+            const HomeSourceSwitcherSlot(),
           ],
         ),
       ),
