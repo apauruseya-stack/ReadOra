@@ -8,6 +8,62 @@ what went wrong.
 Versions are listed oldest first. The release date is the day the signed APK was
 published.
 
+## 4.2.3 - 2026-10-17
+
+### One player instead of two
+
+The audiobook player and its transcript were separate pages behind a toggle,
+which meant the thing you actually want while listening - the words around the
+one being read - was behind a navigation. It is on the same page now.
+
+A **segmented ring** replaces the waveform. One arc per sentence, so the ring is
+also a map of the chapter: sentences already read are lit, the one being spoken
+is thicker and accented, the rest are barely there, and a thumb rides the
+boundary. Drag anywhere on it to scrub by angle. The live arc breathes; a
+scrubbed one does not, because a pulsing arc points at a position you have not
+committed to.
+
+The transcript below it is the old one, deliberately unchanged. An earlier pass
+replaced it with five lines either side of the spoken sentence, on the theory
+that reading along only needs the neighbourhood. That was worse to read - one
+line per sentence, no sense of where in the chapter you are - and it is gone.
+
+**The chapter was being printed twice.** Many sources already number their
+chapters (`CH.1: Nightmare Begins`), and the reader passed that composed string
+as both the label and the title, so the header read the chapter twice and the
+chapter sheet's narrow number column wrapped it over three lines. The label is
+now the number; the title is its own text.
+
+**Tapping the cover now swaps it for the chapter number**, and tapping again
+brings the artwork back. It was also quietly moving your narration on: the
+ring's drag handler fires on pointer-down, before the gesture system has
+decided who owns the touch, so a tap on the cover started a scrub at whatever
+angle the middle pointed at - and then the drag lost to the cover's own button
+and its cancellation committed the seek. Cancels no longer commit.
+
+The gap under the counter is gone too. The transcript had a fifth of the screen
+of padding above the first sentence, on every open, left over from when it had
+to be able to scroll any sentence to the middle.
+
+### Home shows your sources, not your pinned ones
+
+Home was built from your pinned sources. That sounds like a preference but is
+the entire source list - so pinning nothing left Home showing the AniList
+catalogue, which reads as *nothing is installed* rather than *you have not
+chosen anything*.
+
+Every installed novel source is a candidate now. Pinning stays what it always
+was on the source picker: an **order**, not a filter.
+
+**It is capped at five.** The source catalogue is 260-odd extensions deep; a
+reader who installed all of them is not asking for 260 rows on the front page,
+and each row spins up its own runtime to answer. Five is a shelf rather than a
+page. The order is: pinned, then sources that have proved reachable, then - on a
+first run, with nothing pinned and nothing tried - Novelfire, Novel Archive,
+Chikari, Fansub MTL and Friction Zone.
+
+A freshly-dead source is skipped and the next available one takes its place.
+
 ## 4.2.2 - 2026-10-17
 
 ### The audiobook player, reachable and honest about where you are
