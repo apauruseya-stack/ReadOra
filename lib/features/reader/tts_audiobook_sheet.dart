@@ -3,50 +3,20 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:watch_app/core/reading/tts/tts_cubit.dart';
 import 'package:watch_app/core/reading/tts/tts_prefs.dart';
 import 'package:watch_app/core/reading/tts/tts_state.dart';
 import 'package:watch_app/core/theme/app_colors.dart';
 
-/// Why the sheet closed, so the reader can do the one thing the sheet itself
-/// cannot: put the novel text where the voice actually is.
-enum TtsAudiobookExit {
-  /// Closed to go back to the novel, but stay put on the page.
-  dismissed,
 
-  /// Dragged down to go back to the novel AT the sentence being read.
-  revealSentence,
-}
-
-/// Opens the read-aloud audiobook player over the reader, covering the page.
-/// A full-screen page, not a sheet.
+/// Opens the audiobook player over the reader.
 ///
-/// It was a `showModalBottomSheet` sized to 92% of the height, which left a strip
-/// of the reader showing above it and a rounded edge hanging in the middle of the
-/// screen. The transcript and the artwork are the whole point of this screen, and
-/// neither has a use for that strip - so it covers the page now.
-///
-/// What did not change, deliberately:
-///
-///   * Narration runs in a foreground service and does not care what is on
-///     screen, so the book is still being read the whole time this is open, and
-///     dismissing it hands the reader straight back to where they were.
-///   * The close control and the system back button both pop the route, so the
-///     way out is the way it was.
-///   * Player and lyrics are one widget sharing one header, so moving between
-///     them is a toggle with the controls staying put, not a navigation. The
-///     cubit is the reader's own, which is why the sentence being spoken is still
-///     tracked while this is open.
-///
-/// The name is left alone: renaming it would touch the reader and every test that
-/// opens it for no gain, and it still describes what the thing is.
-///
-/// Opens the sheet and reports how it closed.
-///
-/// The system back button pops with no value at all, so the caller has to
-/// survive a null rather than assume this always runs.
-Future<TtsAudiobookExit?> showTtsAudiobookSheet(
+/// No result and no reason: the player closed because the reader closed it. The
+/// gesture that once reported "put the novel on the sentence being read" is
+/// gone, and with it the only caller that cared what the sheet closed for.
+Future<void> showTtsAudiobookSheet(
   BuildContext context, {
   required TtsCubit cubit,
   required String bookTitle,
@@ -56,11 +26,14 @@ Future<TtsAudiobookExit?> showTtsAudiobookSheet(
   required VoidCallback onPreviousChapter,
   required VoidCallback onNextChapter,
   String? cover,
+  List<String> chapterLabels = const [],
+  List<String> chapterTitles = const [],
+  int currentChapter = 0,
+  ValueChanged<int>? onSelectChapter,
+  VoidCallback? onOpenVoiceSettings,
 }) {
-  return Navigator.of(context).push<TtsAudiobookExit>(
-    PageRouteBuilder<TtsAudiobookExit>(
-      // Modal: it is a thing opened over the reader rather than a step in a
-      // sequence, and it should not sit in the reader's back stack as if it did.
+  return Navigator.of(context).push(
+    PageRouteBuilder<void>(
       fullscreenDialog: true,
       transitionDuration: const Duration(milliseconds: 220),
       reverseTransitionDuration: const Duration(milliseconds: 180),
@@ -73,10 +46,12 @@ Future<TtsAudiobookExit?> showTtsAudiobookSheet(
         onPreviousChapter: onPreviousChapter,
         onNextChapter: onNextChapter,
         cover: cover,
+        chapterLabels: chapterLabels,
+        chapterTitles: chapterTitles,
+        currentChapter: currentChapter,
+        onSelectChapter: onSelectChapter,
+        onOpenVoiceSettings: onOpenVoiceSettings,
       ),
-      // A short fade with a slight lift, so it reads as the sheet growing into
-      // the page it came from. Anything longer makes a reader wait to get to
-      // the thing they tapped.
       transitionsBuilder: (_, animation, _, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -97,17 +72,21 @@ Future<TtsAudiobookExit?> showTtsAudiobookSheet(
   );
 }
 
-enum _SheetView { player, lyrics }
 
-/// Downward pull, in logical pixels, that counts as "take me back to the novel
-/// text".
+/// Words per minute the engine manages at 1.0x, used for the time-left figure.
 ///
-/// Far enough to be a deliberate pull rather than the bounce of a tap, and
-/// short enough that the sheet does not feel stuck.
-const double _dragToReadOverscroll = 64;
+/// A rough average rather than a measured rate: the real one varies with the
+/// voice and the language, and a number that is approximately right is more use
+/// than no number at all on a screen where the reader is deciding whether to
+/// start a chapter or save it for later.
+const double _wordsPerMinuteAt1x = 170;
 
-/// The audiobook player and its lyric-style transcript, sharing one sheet and
-/// one header, so moving between them is a toggle rather than a navigation.
+/// The audiobook player: a segmented ring around the cover, the sentences
+/// either side of the one being spoken, and one row of transport.
+///
+/// The transcript used to be a second page reached by a toggle, which meant the
+/// thing you wanted while listening - the words around the one being read - was
+/// behind a navigation. It is here instead, and there is no second page.
 class TtsAudiobookSheet extends StatefulWidget {
   const TtsAudiobookSheet({
     super.key,
@@ -119,162 +98,202 @@ class TtsAudiobookSheet extends StatefulWidget {
     required this.onPreviousChapter,
     required this.onNextChapter,
     this.cover,
+    this.chapterLabels = const [],
+    this.chapterTitles = const [],
+    this.currentChapter = 0,
+    this.onSelectChapter,
+    this.onOpenVoiceSettings,
   });
 
   final TtsCubit cubit;
   final String bookTitle;
 
-/// Read on every build, not captured once: auto-advance changes the chapter
+  /// Read on every build, not captured once: auto-advance changes the chapter
   /// while this is open and the title has to follow it.
   final String Function() chapterTitle;
-  final String? cover;
 
-  /// Read on every build too, and for the same reason — but these matter more.
-  ///
-  /// A title that lags is cosmetic. A *disabled button* is not: captured once,
-  /// the first chapter's Previous stayed disabled for the whole session, and
-  /// the last chapter's Next stayed enabled and did nothing when tapped, which
-  /// is indistinguishable from the navigation being broken. The chapter moves
-  /// under this screen — by a tap here, or by narration reaching the end of one
-  /// on its own — so the answer has to be asked when the button is drawn.
   final bool Function() canPreviousChapter;
   final bool Function() canNextChapter;
-
   final VoidCallback onPreviousChapter;
   final VoidCallback onNextChapter;
+  final String? cover;
+
+  /// Chapter numbers and titles for the chapter sheet. Empty means the sheet is
+  /// not offered, rather than offered and blank.
+  final List<String> chapterLabels;
+  final List<String> chapterTitles;
+  final int currentChapter;
+
+  /// Null when there is nothing to pick from, which hides the chapters button
+  /// rather than opening a sheet with no rows.
+  final ValueChanged<int>? onSelectChapter;
+
+  /// Long-press on the cover. Null removes the long-press.
+  final VoidCallback? onOpenVoiceSettings;
 
   @override
   State<TtsAudiobookSheet> createState() => _TtsAudiobookSheetState();
 }
 
 class _TtsAudiobookSheetState extends State<TtsAudiobookSheet> {
-  _SheetView _view = _SheetView.player;
+  /// Sentence under the finger while the ring is being scrubbed, or null when
+  /// it is not. Null is what makes the counter say "Jump to" instead of
+  /// "Sentence" - without it the reader cannot tell a preview from a commit.
+  int? _scrub;
 
-  /// Downward pull accumulated since the current touch started, in logical
-  /// pixels.
-  double _pulledDown = 0;
-
-  /// Lets the drag handler ask whether the player body is already scrolled, so
-  /// pulling down while the layout is panned is not read as leaving.
-  final ScrollController _playerScroll = ScrollController();
-
-  /// Treats pulling the player down as "take me back to the novel text".
+  /// Whether the middle of the ring shows the chapter number instead of the
+  /// cover.
   ///
-  /// Listens to raw pointer moves rather than adding a drag recogniser, and the
-  /// reason is the same either way round: the player body is a scroll view, so
-  /// a [GestureDetector] wrapped around it competes with that scroll view for
-  /// the gesture and - being the shallower of the two - loses it every time. It
-  /// would sit there looking correct and never fire. [Listener] is not in the
-  /// gesture arena at all, so it sees the drag without taking it from anyone.
-  ///
-  /// Counted only while the body is at the top, because the body does scroll
-  /// on a short screen or at large text, and there a downward drag is the
-  /// reader panning the layout back up, not a request to leave.
-  void _onPlayerPointerMove(PointerMoveEvent event) {
-    if (event.delta.dy <= 0) return;
-    if (_playerScroll.hasClients) {
-      final position = _playerScroll.position;
-      if (position.pixels > position.minScrollExtent) return;
-    }
-    _pulledDown += event.delta.dy;
-    if (_pulledDown < _dragToReadOverscroll) return;
-    _pulledDown = 0;
-    Navigator.of(context).pop(TtsAudiobookExit.revealSentence);
+  /// Tapping the cover swaps it for the number, and tapping again brings the
+  /// artwork back - a second thing to look at in the same place, for the reader
+  /// who is part-way through a chapter and wants to know how far in they are
+  /// without opening the chapter sheet.
+  bool _showChapterNumber = false;
+
+
+  /// The sentence being spoken, clamped into the list.
+  int get _current {
+    final total = widget.cubit.state.totalSentences;
+    if (total == 0) return 0;
+    return widget.cubit.state.currentIndex.clamp(0, total - 1);
   }
 
-  @override
-  void dispose() {
-    _playerScroll.dispose();
-    super.dispose();
-  }
 
+
+  Future<void> _openChapters() async {
+    final select = widget.onSelectChapter;
+    if (select == null) return;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _ChapterSheet(
+        labels: widget.chapterLabels,
+        titles: widget.chapterTitles,
+        current: widget.currentChapter,
+        onShuffle: () {
+          final total = widget.cubit.state.totalSentences;
+          if (total < 2) return;
+          final next = math.Random().nextInt(total);
+          if (next != _current) widget.cubit.seek(next);
+        },
+      ),
+    );
+    if (picked != null) select(picked);
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Material, not a ColoredBox: the controls are InkWells, which assert on a
+    // missing Material ancestor when they build.
     return Material(
-      // Material, not a ColoredBox: the quick actions are InkWells, which
-      // assert on a missing Material ancestor when they build.
       color: AppColors.bg,
       child: BlocBuilder<TtsCubit, TtsState>(
         bloc: widget.cubit,
         builder: (context, state) {
           final total = state.totalSentences;
-          final current = total == 0 ? 0 : state.currentIndex.clamp(0, total - 1);
           return Stack(
             fit: StackFit.expand,
             children: [
               _BlurredBackdrop(cover: widget.cover),
-              // Insets on all four sides now, where the sheet only ever needed
-              // the bottom: covering the page puts the header under the status
-              // bar, and the transport under the navigation bar.
               SafeArea(
                 child: Column(
-                  children: [
-                    _SheetHeader(
-                      onClose: () => Navigator.of(context)
-                          .pop(TtsAudiobookExit.dismissed),
-                      showingLyrics: _view == _SheetView.lyrics,
-                      onToggleView: () => setState(() {
-                        _view = _view == _SheetView.player
-                            ? _SheetView.lyrics
-                            : _SheetView.player;
-                      }),
-                    ),
-                    Expanded(
-                      child: _view == _SheetView.player
-                          // Dragging the player down is "take me back to the
-                          // text", the same move as the close button but aimed
-                          // at the page rather than at the sheet. Only here:
-                          // the transcript scrolls vertically, and pulling that
-                          // would strand the reader on whichever sentence they
-                          // were trying to read.
-                          ? Listener(
-                              key: const ValueKey(
-                                'audiobook-player-drag-to-read',
-                              ),
-                              onPointerDown: (_) => _pulledDown = 0,
-                              onPointerMove: _onPlayerPointerMove,
-                              child: _PlayerBody(
-                                cover: widget.cover,
-                                chapterTitle: widget.chapterTitle(),
-                                bookTitle: widget.bookTitle,
-                                scrollController: _playerScroll,
-                                onOpenLyrics: () => setState(() {
-                                  _view = _SheetView.lyrics;
-                                }),
-                              ),
-                            )
-                        : _LyricsBody(
-                              chapterTitle: widget.chapterTitle,
-                              cubit: widget.cubit,
-                              state: state,
-                              current: current,
-                            ),
-                    ),
-                    _WaveformProgress(
-                      cubit: widget.cubit,
-                      state: state,
-                      current: current,
-                    ),
-                    _CounterRow(state: state, current: current),
-                    _TransportRow(
-                      cubit: widget.cubit,
-                      state: state,
-                      current: current,
-                      canPreviousChapter: widget.canPreviousChapter,
-                      canNextChapter: widget.canNextChapter,
-                      onPreviousChapter: widget.onPreviousChapter,
-                      onNextChapter: widget.onNextChapter,
-                      onShuffle: () {
-                        if (total < 2) return;
-                        final next = math.Random().nextInt(total);
-                        if (next != current) widget.cubit.seek(next);
-                      },
-                    ),
-                    _QuickActions(cubit: widget.cubit, state: state),
-                    const SizedBox(height: 8),
-                  ],
-                ),
+                    children: [
+                      _Header(
+                        onClose: () => Navigator.of(context).pop(),
+                        chapterLabel: _chapterLabel(widget.currentChapter),
+                        chapterTitle: widget.chapterTitle(),
+                        bookTitle: widget.bookTitle,
+                        onOpenChapters:
+                            widget.onSelectChapter == null ? null : _openChapters,
+                      ),
+Expanded(
+                          child: Column(
+                            children: [
+                              _SentenceRing(
+                                  total: total,
+                                  index: _scrub ?? _current,
+                                  scrubbing: _scrub != null,
+                                  playing: state.isSpeaking,
+                                  cover: widget.cover,
+                                  chapterNumber: _chapterLabel(
+                                    widget.currentChapter,
+                                  ),
+                                  showChapterNumber: _showChapterNumber,
+                                  onCoverTap: () => setState(
+                                    () => _showChapterNumber =
+                                        !_showChapterNumber,
+                                  ),
+                                  onCoverLongPress:
+                                      widget.onOpenVoiceSettings,
+                                  onScrubStart: (i) => setState(() => _scrub = i),
+                                  onScrubUpdate: (i) {
+                                    if (_scrub == i) return;
+                                    setState(() => _scrub = i);
+                                    HapticFeedback.selectionClick();
+                                  },
+                                  onScrubEnd: (i) {
+                                  setState(() => _scrub = null);
+                                  if (i != state.currentIndex) {
+                                    widget.cubit.seek(i);
+                                  }
+                                },
+                                // A cancelled scrub is not one the reader
+                                // chose - the cover's tap won the arena - so
+                                // this puts the ring back and seeks nothing.
+                                onScrubCancel: () => setState(() => _scrub = null),
+                                ),
+                                const SizedBox(height: 12),
+_Counter(
+                                  index: _scrub ?? _current,
+                                  total: total,
+                                  sentences: state.sentences,
+                                  rate: state.rate,
+                                  scrubbing: _scrub != null,
+                                ),
+                                const SizedBox(height: 18),
+                                // Expanded, not Flexible: this Column is bounded
+                                // by the sheet, so the transcript can claim
+                                // every pixel the ring and the bar leave it -
+                                // the old lyrics page had the whole lower half
+                                // of the screen and read accordingly.
+                                Expanded(
+                                  child: _Transcript(
+                                    sentences: state.sentences,
+                                    current: _current,
+                                    onPick: (i) => widget.cubit.seek(i),
+                                  ),
+                                ),
+                            ],
+                          ),
+                      ),
+                      _PlayerBar(
+                        canPreviousChapter: widget.canPreviousChapter(),
+                        canNextChapter: widget.canNextChapter(),
+                        onPreviousChapter: widget.onPreviousChapter,
+                        onNextChapter: widget.onNextChapter,
+                        onBack: total == 0 ? null : () => widget.cubit.skip(-1),
+                        onForward: total == 0 ? null : () => widget.cubit.skip(1),
+                        onPlayPause: widget.cubit.toggle,
+                        playing: state.isSpeaking,
+                        rate: state.rate,
+                        sleepMinutes: state.sleepTimerMinutes,
+                        onRate: () => widget.cubit.setRate(
+                          TtsSpeed.next(state.rate),
+                        ),
+                        // Long-press rather than a seventh button: the bar is
+                        // already seven across on a narrow phone, and the sleep
+                        // timer is something a reader sets once and forgets.
+                        onSleep: () => widget.cubit.setSleepTimer(
+                          _nextSleep(state.sleepTimerMinutes),
+                        ),
+                        onChapters: widget.onSelectChapter == null
+                            ? null
+                            : _openChapters,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
               ),
             ],
           );
@@ -282,29 +301,43 @@ class _TtsAudiobookSheetState extends State<TtsAudiobookSheet> {
       ),
     );
   }
+
+  String _chapterLabel(int index) {
+    if (index >= 0 && index < widget.chapterLabels.length) {
+      return widget.chapterLabels[index];
+    }
+    return 'Chapter ${index + 1}';
+  }
 }
 
-class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({
+/// Sleep timer steps. Zero is off, and it is the state it returns to.
+const List<int> _kSleepCycle = <int>[0, 15, 30, 60];
+
+int _nextSleep(int current) {
+  final at = _kSleepCycle.indexOf(current);
+  return _kSleepCycle[(at + 1) % _kSleepCycle.length];
+}
+
+/// Close on the left, and the chapter itself as the way into the chapter list.
+class _Header extends StatelessWidget {
+  const _Header({
     required this.onClose,
-    required this.showingLyrics,
-    required this.onToggleView,
+    required this.chapterLabel,
+    required this.chapterTitle,
+    required this.bookTitle,
+    this.onOpenChapters,
   });
 
   final VoidCallback onClose;
-  final bool showingLyrics;
-  final VoidCallback onToggleView;
-
-  /// Whether "READING NOW" is the way back to the player, which it only is
-  /// from the lyrics: there the cover that does this job is off screen, and in
-  /// the player the cover already offers the same move, so two targets for one
-  /// gesture would be one too many.
-  bool get _showingLyricsTapTarget => showingLyrics;
+  final String chapterLabel;
+  final String chapterTitle;
+  final String bookTitle;
+  final VoidCallback? onOpenChapters;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      padding: const EdgeInsets.fromLTRB(8, 6, 16, 6),
       child: Row(
         children: [
           IconButton(
@@ -314,269 +347,513 @@ class _SheetHeader extends StatelessWidget {
             icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
             color: AppColors.textPrimary,
           ),
+          const SizedBox(width: 4),
           Expanded(
-            child: _showingLyricsTapTarget
-                ? Semantics(
-                    button: true,
-                    label: 'Back to player',
-                    child: GestureDetector(
-                      key: const ValueKey('audiobook-sheet-reading-now'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onToggleView,
-                      child: const Text(
-                        'READING NOW',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 2.4,
+            child: onOpenChapters == null
+                ? _titles()
+                : InkWell(
+                    key: const ValueKey('audiobook-open-chapters'),
+                    onTap: onOpenChapters,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 6,
+                        horizontal: 4,
+                      ),
+                      child: _titles(),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+Widget _titles() => Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            // The chapter's own text, once. Many sources already number it
+            // ("CH.1: Nightmare Begins"), so printing the number beside it
+            // reads the chapter twice - and where the source numbers it
+            // differently from the app's own index, the two disagree on screen.
+            chapterTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            bookTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      );
+}
+
+/// One arc per sentence, arranged into a ring, with the cover in the middle.
+///
+/// The ring is the seek control, so it doubles as a map of the chapter: every
+/// sentence the chapter has is an arc, the ones already read are lit, the one
+/// being spoken is thick and accented, and the rest are barely there. Dragging
+/// anywhere on it scrubs by angle.
+class _SentenceRing extends StatelessWidget {
+  const _SentenceRing({
+    required this.total,
+    required this.index,
+    required this.scrubbing,
+    required this.playing,
+required this.cover,
+    required this.chapterNumber,
+    required this.showChapterNumber,
+    required this.onCoverTap,
+    required this.onCoverLongPress,
+    required this.onScrubStart,
+    required this.onScrubUpdate,
+    required this.onScrubEnd,
+    required this.onScrubCancel,
+  });
+
+  final int total;
+  final int index;
+  final bool scrubbing;
+  final bool playing;
+  final String? cover;
+
+  /// Shown in place of the artwork while [showChapterNumber] is set.
+  final String chapterNumber;
+  final bool showChapterNumber;
+
+  final VoidCallback onCoverTap;
+  final VoidCallback? onCoverLongPress;
+  final ValueChanged<int> onScrubStart;
+  final ValueChanged<int> onScrubUpdate;
+  final ValueChanged<int> onScrubEnd;
+
+  /// A scrub that lost the gesture arena. Puts the ring back without seeking,
+  /// because a cancelled scrub is not one the reader asked for.
+  final VoidCallback onScrubCancel;
+
+  static const double _stroke = 6;
+  static const double _currentStroke = 9;
+  static const double _dimOpacity = 0.2;
+
+  /// The sentence whose arc the touch is inside, by angle from twelve o'clock.
+  ///
+  /// Clamped rather than wrapped at the ends: dragging past the start parks on
+  /// the first sentence rather than jumping to the last, which is what an
+  /// unbounded angle would do and reads as the ring being broken.
+  int _indexAt(Offset local, Size size) {
+    if (total <= 1) return 0;
+    final centre = Offset(size.width / 2, size.height / 2);
+    var angle = math.atan2(local.dy - centre.dy, local.dx - centre.dx) +
+        math.pi / 2;
+    if (angle < 0) angle += 2 * math.pi;
+    return (angle / (2 * math.pi) * total).floor().clamp(0, total - 1);
+  }
+
+  /// True when [local] is on the cover rather than on the ring.
+  ///
+  /// `onPanDown` fires on pointer-DOWN, before the gesture arena resolves, so
+  /// the pan recogniser sees every tap inside the ring - including one aimed at
+  /// the cover in the middle of it. It then loses the arena to the cover's
+  /// InkWell, and the cancel committed whatever angle the tap pointed at, which
+  /// is somewhere around a quarter of the way round the chapter. That is why
+  /// tapping the cover moved the reading on: a scrub that started by accident
+  /// and was committed by the cancel.
+  ///
+  /// Measured against the same 0.826 width factor the cover disc is built with.
+  /// Almost no slack, because the band of ring left outside the cover is only
+  /// about a ninth of the box - a 140px ring leaves twelve pixels of it, and
+  /// a few pixels of slack here swallows half the scrub area.
+  bool _isOnCover(Offset local, Size size) {
+    final centre = Offset(size.width / 2, size.height / 2);
+    final coverRadius = size.shortestSide * 0.413 + 1;
+    return (local - centre).distance <= coverRadius;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = MediaQuery.sizeOf(context).height;
+    final side = math.max(140.0, math.min(240.0, fraction * 0.23));
+    return Center(
+      child: SizedBox(
+        key: const ValueKey('audiobook-ring'),
+        width: side,
+        height: side,
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final size = Size(c.maxWidth, c.maxHeight);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Both ignored on the cover, so tapping it only swaps the artwork for the
+              // chapter number and never starts a scrub.
+              onPanDown: (d) {
+                if (_isOnCover(d.localPosition, size)) return;
+                onScrubStart(_indexAt(d.localPosition, size));
+              },
+              onPanUpdate: (d) {
+                if (_isOnCover(d.localPosition, size)) return;
+                onScrubUpdate(_indexAt(d.localPosition, size));
+              },
+              // Only ever reached when this pan WON the arena - a loser is sent
+              // to onPanCancel instead - so committing here commits something the
+              // reader actually chose.
+              onPanEnd: (_) => onScrubEnd(index),
+              // Cancelled, not committed. A cancel means this gesture lost -
+              // to the cover's tap, most often - so whatever angle it had
+              // reached is not something the reader chose. Seeking here is what
+              // made tapping the cover move the reading on.
+              onPanCancel: onScrubCancel,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _RingPainter(
+                        total: total,
+                        index: index,
+                        scrubbing: scrubbing,
+                        // Only the live sentence breathes. While scrubbing, a
+                        // pulsing arc moves to a target the reader has not
+                        // committed to, which draws the eye to the wrong place.
+                        pulse: playing && !scrubbing,
+                      ),
+                    ),
+                  ),
+_CoverDisc(
+                    cover: cover,
+                    chapterNumber: chapterNumber,
+                    showChapterNumber: showChapterNumber,
+                    onTap: onCoverTap,
+                    onLongPress: onCoverLongPress,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _CoverDisc extends StatelessWidget {
+  const _CoverDisc({
+    required this.cover,
+    required this.chapterNumber,
+    required this.showChapterNumber,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final String? cover;
+  final String chapterNumber;
+  final bool showChapterNumber;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCover = cover != null && cover!.isNotEmpty;
+    return FractionallySizedBox(
+      widthFactor: 0.826,
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Material(
+          color: AppColors.surface2,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('audiobook-cover'),
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: showChapterNumber
+                // Sized to fit either side of the disc, so a three-digit
+                // chapter number is not clipped by the circle.
+                ? FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Text(
+                        chapterNumber,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 56,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   )
-                : const Text(
-                    'READING NOW',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 2.4,
+                : hasCover
+                ? CachedNetworkImage(
+                    imageUrl: cover!,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) => const Icon(
+                      Icons.menu_book_rounded,
+                      size: 64,
+                      color: AppColors.textTertiary,
                     ),
+                  )
+                : const Icon(
+                    Icons.menu_book_rounded,
+                    size: 64,
+                    color: AppColors.textTertiary,
                   ),
           ),
-          IconButton(
-            key: const ValueKey('audiobook-sheet-toggle'),
-            tooltip: showingLyrics ? 'Back to player' : 'Open lyrics',
-            onPressed: onToggleView,
-            icon: Icon(
-              showingLyrics ? Icons.list_rounded : Icons.lyrics_rounded,
-              size: 24,
-            ),
-            color: AppColors.accent,
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// The cover, blurred and dimmed, behind everything.
-///
-/// In a [RepaintBoundary] so scrolling the transcript never re-runs the blur.
-class _BlurredBackdrop extends StatelessWidget {
-  const _BlurredBackdrop({this.cover});
-
-  final String? cover;
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (cover != null && cover!.isNotEmpty)
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
-              child: CachedNetworkImage(
-                imageUrl: cover!,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => const SizedBox.shrink(),
-              ),
-            ),
-          // Two stops rather than one flat wash: the top keeps the header
-          // legible over a pale cover, the bottom sinks the transport row.
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.bg.withValues(alpha: 0.80),
-                  AppColors.bg.withValues(alpha: 0.93),
-                  AppColors.bg,
-                ],
-                stops: const [0, 0.45, 1],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlayerBody extends StatelessWidget {
-  const _PlayerBody({
-    required this.cover,
-    required this.chapterTitle,
-    required this.bookTitle,
-    required this.onOpenLyrics,
-    required this.scrollController,
+class _RingPainter extends CustomPainter {
+  _RingPainter({
+    required this.total,
+    required this.index,
+    required this.scrubbing,
+    required this.pulse,
   });
 
-  final String? cover;
-  final String chapterTitle;
-  final String bookTitle;
-  final ScrollController scrollController;
+  final int total;
+  final int index;
+  final bool scrubbing;
+  final bool pulse;
 
-  /// The cover is the big target the reader was already aiming at, so it opens
-  /// the transcript - the same move as the header's toggle button, one gesture
-  /// further from it.
-  final VoidCallback onOpenLyrics;
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (total <= 0) return;
+    final centre = size.center(Offset.zero);
+    final radius = (size.shortestSide / 2) -
+        (index == 0 ? _SentenceRing._currentStroke : _SentenceRing._stroke) / 2;
+    const sweep = 2 * math.pi;
+    // A gap of 30% of each slot, so the ring reads as separate arcs rather than
+    // as one thick circle with a highlight on it.
+    final slot = sweep / total;
+    final arc = slot * 0.7;
+    // Breathing is an opacity change, not a geometry one: an arc that grows and
+    // shrinks shifts its own neighbours' apparent spacing.
+    final currentAlpha = pulse ? 0.5 : 1.0;
 
-  /// Room the title block needs under the cover, so the cover never grows into
-  /// it and pushes the layout off the bottom of the sheet.
-  static const double _titlesReserve = 96;
+    for (var i = 0; i < total; i++) {
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = i == index ? _SentenceRing._currentStroke : _SentenceRing._stroke;
+      if (i == index) {
+        paint.color = AppColors.accent.withValues(alpha: currentAlpha);
+      } else {
+        paint.color = AppColors.textPrimary.withValues(
+          alpha: i < index ? 0.85 : _SentenceRing._dimOpacity,
+        );
+      }
+      canvas.drawArc(
+        Rect.fromCircle(center: centre, radius: radius),
+        -math.pi / 2 + i * slot,
+        arc,
+        false,
+        paint,
+      );
+    }
+
+    // The thumb sits on the boundary just after the current arc, so it reads
+    // as a position on the ring rather than as one more arc.
+    final a = -math.pi / 2 + (index + 0.5) * slot;
+    final thumb = centre +
+        Offset(math.cos(a) * radius, math.sin(a) * radius);
+    canvas.drawCircle(
+      thumb,
+      7,
+      Paint()..color = AppColors.textPrimary,
+    );
+    canvas.drawCircle(
+      thumb,
+      7,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = AppColors.accent,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.total != total ||
+      old.index != index ||
+      old.scrubbing != scrubbing ||
+      old.pulse != pulse;
+}
+
+/// "Sentence 27 of 90", plus how long the rest of the chapter should take.
+class _Counter extends StatelessWidget {
+  const _Counter({
+    required this.index,
+    required this.total,
+    required this.rate,
+    required this.scrubbing,
+    required this.sentences,
+  });
+
+  final int index;
+  final int total;
+  final double rate;
+  final bool scrubbing;
+  final List<TtsSentenceView> sentences;
+
+  /// Words left to read, and the minutes that is at the current speed.
+  String? get _remaining {
+    if (sentences.isEmpty) return null;
+    var words = 0;
+    for (var i = index; i < sentences.length; i++) {
+      words += sentences[i].text.trim().split(RegExp(r'\s+')).length;
+    }
+    final minutes = words / (_wordsPerMinuteAt1x * (rate <= 0 ? 1 : rate));
+    if (minutes < 1) return '<1 min left';
+    return '~${minutes.round()} min left';
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Sized from the space this body is actually given, not from the window.
-    //
-    // The window is the wrong reference: the sheet hands this body whatever is
-    // left after the header, the waveform, the transport and the quick actions,
-    // so measuring against the screen capped the cover well below what was
-    // available and the slack surfaced as a gap above the waveform.
-    return LayoutBuilder(
-      builder: (context, c) {
-        final side = math
-            .min(c.maxWidth, (c.maxHeight - _titlesReserve) * 0.92)
-            .clamp(120.0, 480.0)
-            .toDouble();
-        final vertical = math.max(0.0, c.maxHeight - 16);
-        return SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-          child: ConstrainedBox(
-            // Centres the artwork in whatever height there is, and still scrolls
-            // on a short screen rather than overflowing.
-            constraints: BoxConstraints(minHeight: vertical),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-Semantics(
-                  button: true,
-                  label: 'Open lyrics',
-                  child: GestureDetector(
-                    key: const ValueKey('audiobook-cover-tap'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onOpenLyrics,
-                    child: Container(
-                      key: const ValueKey('audiobook-cover'),
-                      width: side,
-                      height: side,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface2,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: (cover == null || cover!.isEmpty)
-                          ? const Icon(
-                              Icons.menu_book_rounded,
-                              size: 84,
-                              color: AppColors.textTertiary,
-                            )
-                          : CachedNetworkImage(
-                              imageUrl: cover!,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, _, _) => const Icon(
-                                Icons.menu_book_rounded,
-                                size: 84,
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        chapterTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        bookTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    final remaining = _remaining;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            scrubbing ? 'Jump to' : 'Sentence',
+            style: TextStyle(
+              color: scrubbing ? AppColors.accent : AppColors.textSecondary,
+              fontSize: 12,
             ),
           ),
-        );
-      },
+          Text(
+            ' ${index + 1}',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            ' / $total',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+if (remaining != null) ...[
+            const SizedBox(width: 10),
+            // Flexible, because this Row's other children are text and cannot
+            // shrink: on a 360px screen at a large system font a fixed trailing
+            // label overflows the row by a fraction of a pixel.
+            Flexible(
+              child: Text(
+                remaining,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
+/// The chapter's whole transcript, with the sentence being spoken held in the
+/// middle of the screen.
+///
+/// This is what the old lyrics page was, and it is deliberately unchanged by
+/// the merge. An earlier pass replaced it with five lines either side of the
+/// spoken sentence on the theory that reading along only needs the
+/// neighbourhood - and that version was worse to read: one line per sentence,
+/// no way to see where in the chapter you are, and no way to find a line you
+/// half remember without dragging a five-item list.
+///
+/// The auto-follow is the whole reason it works. A lazily built list has no
+/// context for a line it has never laid out, so a sentence near the end of a
+/// long chapter cannot simply be measured - there is nothing to measure. So this
+/// converges instead: jump to an estimate, which builds the line, then correct
+/// using the average height of the lines that are now genuinely on screen, and
+/// repeat.
+///
+/// The correction matters. Estimating from character counts alone assumes a
+/// font's average glyph width, and a wider font - a bold face, a large system
+/// text scale - makes every guess short and the target lands further and
+/// further below the viewport.
+class _Transcript extends StatefulWidget {
+  const _Transcript({
+    required this.sentences,
+    required this.current,
+    required this.onPick,
+  });
 
-class _LyricsBody extends StatefulWidget {
-    const _LyricsBody({
-      required this.cubit,
-      required this.state,
-      required this.current,
-      required this.chapterTitle,
-    });
+  final List<TtsSentenceView> sentences;
+  final int current;
+  final ValueChanged<int> onPick;
 
-    final TtsCubit cubit;
-    final TtsState state;
-    final int current;
+  @override
+  State<_Transcript> createState() => _TranscriptState();
+}
 
-    /// The chapter being read, as a function for the same reason the player's
-    /// is: the transcript outlives the chapter change that a skip causes, and a
-    /// transcript with no chapter named on it is the one thing that cannot say
-    /// where the reader is. Never the sentence index - that is local to a
-    /// chapter and has nothing to do with which chapter this is.
-    final String Function() chapterTitle;
-
-    @override
-    State<_LyricsBody> createState() => _LyricsBodyState();
-  }
-
-class _LyricsBodyState extends State<_LyricsBody> {
+class _TranscriptState extends State<_Transcript> {
   final _scroll = ScrollController();
   final _keys = <int, GlobalKey>{};
   int _lastRevealed = -1;
 
   // Shared by the real rows and by [_estimateExtent], so the estimate cannot
   // drift away from the layout it is estimating.
-  static const double _rowPadding = 8;
+  static const double _rowPadding = 10;
   static const double _gutter = 26;
-  static const double _fontIdle = 22;
-  static const double _fontActive = 26;
-  static const double _lineHeight = 1.3;
+  static const double _fontIdle = 17;
+  static const double _fontActive = 22;
+  static const double _lineHeight = 1.45;
 
-  /// How many frames one reveal may spend converging on its sentence.
-  ///
-  /// Generous on purpose. The first open of a transcript usually spends the
-  /// first frame waiting for the list to attach, so a budget sized for the
-  /// steady state runs out exactly when the reader most needs the view to move.
+  /// How many frames one reveal may spend converging. Generous on purpose: the
+  /// first open usually spends the first frame waiting for the list to attach,
+  /// and a budget sized for the steady state runs out exactly when the reader
+  /// most needs the view to move.
   static const int _maxRevealAttempts = 12;
+
+  /// Space above the first sentence and below the last, as a fraction of the
+  /// screen.
+  ///
+  /// Asymmetric on purpose. This is what lets [Scrollable.ensureVisible] put
+  /// the spoken sentence in the middle of the screen: the list needs room
+  /// above and below the row to scroll it to the centre. Symmetric at a fifth
+  /// each, which is what this used to be, the top of it is dead space on open -
+  /// a fifth of the screen of nothing above the first sentence, which is what
+  /// a reader sees every time they open the player on a long chapter.
+  ///
+  /// So the top is barely anything, and the room to centre is spent at the
+  /// bottom, where a reader scrolled to the end of a chapter is the only person
+  /// who needs it. Sentences near the end centre less precisely than they used
+  /// to; that is the trade, and it is the right way round.
+  static const double _padTopFraction = 0.03;
+  static const double _padBottomFraction = 0.34;
 
   @override
   void initState() {
     super.initState();
-    // The transcript is built fresh every time the view is toggled on, and
-    // didUpdateWidget does not fire for a widget's own first build. Without this
-    // the view opened at the top of the chapter and the reader had to scroll to
-    // find the sentence being read.
+    // Built fresh every time this is opened, and didUpdateWidget does not fire
+    // for a widget's own first build. Without this the view opened at the top
+    // of the chapter and the reader had to scroll to find the sentence being
+    // read.
     _revealCurrent();
   }
 
@@ -587,11 +864,10 @@ class _LyricsBodyState extends State<_LyricsBody> {
   }
 
   @override
-  void didUpdateWidget(covariant _LyricsBody old) {
+  void didUpdateWidget(covariant _Transcript old) {
     super.didUpdateWidget(old);
     if (widget.current != _lastRevealed) _revealCurrent();
   }
-
 
   void _revealCurrent() {
     final index = widget.current;
@@ -601,17 +877,6 @@ class _LyricsBodyState extends State<_LyricsBody> {
   }
 
   /// Puts sentence [index] in the middle of the view.
-  ///
-  /// A lazily built list has no context for a line it has never laid out, so a
-  /// spoken sentence near the end of a long chapter cannot simply be measured -
-  /// there is nothing to measure. So this converges instead: jump to an
-  /// estimate, which builds the line, then correct using the average height of
-  /// the lines that are now genuinely on screen, and repeat.
-  ///
-  /// The correction matters. Estimating from character counts alone assumes a
-  /// font's average glyph width, and a wider font - a bold face, a large
-  /// system text scale, or the fixed-width test font - makes every guess short
-  /// and the target lands further and further below the viewport.
   void _reveal(int index) {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) => _step(index, 0));
@@ -646,9 +911,7 @@ class _LyricsBodyState extends State<_LyricsBody> {
     if (_scroll.hasClients) {
       final position = _scroll.position;
       final average = _measuredAverageExtent() ?? _estimateExtent(index);
-      final top = widget.state.sentences.isEmpty
-          ? 0.0
-          : MediaQuery.sizeOf(context).height * 0.20;
+      final top = MediaQuery.sizeOf(context).height * _padTopFraction;
       final target = (top + average * index).clamp(
         position.minScrollExtent,
         position.maxScrollExtent,
@@ -660,8 +923,8 @@ class _LyricsBodyState extends State<_LyricsBody> {
     );
   }
 
-  /// Average height of the transcript lines currently laid out, or null when
-  /// nothing has been built yet.
+  /// Average height of the rows currently laid out, or null when nothing has
+  /// been built yet.
   double? _measuredAverageExtent() {
     var total = 0.0;
     var count = 0;
@@ -677,12 +940,10 @@ class _LyricsBodyState extends State<_LyricsBody> {
     return count == 0 ? null : total / count;
   }
 
-  /// First-guess height of a transcript line, from its text.
-  ///
-  /// Only a starting point; [_measuredAverageExtent] replaces it as soon as any
-  /// real line has been laid out.
+  /// First-guess height of a row, from its text. Only a starting point;
+  /// [_measuredAverageExtent] replaces it as soon as any real row has laid out.
   double _estimateExtent(int index) {
-    final sentences = widget.state.sentences;
+    final sentences = widget.sentences;
     final text = index < sentences.length ? sentences[index].text.trim() : '';
     final width = MediaQuery.sizeOf(context).width - _gutter * 2;
     final perLine = math.max(8.0, width / (_fontIdle * 0.52));
@@ -692,7 +953,7 @@ class _LyricsBodyState extends State<_LyricsBody> {
 
   @override
   Widget build(BuildContext context) {
-    final sentences = widget.state.sentences;
+    final sentences = widget.sentences;
     _keys.removeWhere((i, _) => i >= sentences.length);
     if (sentences.isEmpty) {
       return const Center(
@@ -703,506 +964,368 @@ class _LyricsBodyState extends State<_LyricsBody> {
       );
     }
     final viewport = MediaQuery.sizeOf(context).height;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(_gutter, 8, _gutter, 0),
-          child: Text(
-            // Re-read on every build, so a skip relabels the transcript in
-            // place rather than leaving it named for the chapter behind.
-            widget.chapterTitle(),
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
-            ),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            controller: _scroll,
-            padding: EdgeInsets.symmetric(vertical: viewport * 0.20, horizontal: _gutter),
-            itemCount: sentences.length,
-            itemBuilder: (context, i) {
-              final distance = (i - widget.current).abs();
-              final active = distance == 0;
-              final opacity = active
-                  ? 1.0
-                  : (0.62 - distance * 0.1).clamp(0.16, 0.56);
-              return Semantics(
-                button: true,
-                label: 'Sentence ${i + 1}',
-                child: GestureDetector(
-                  key: _keys.putIfAbsent(i, GlobalKey.new),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => widget.cubit.seek(i),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: _rowPadding),
-                    child: Text(
-                      sentences[i].text,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.textPrimary.withValues(alpha: opacity),
-                        fontSize: active ? _fontActive : _fontIdle,
-                        height: _lineHeight,
-                        fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-            ),
-          ),
-        ],
-      );
-  }
-}
-
-/// The audiobook-style waveform.
-///
-/// Bar heights come from each sentence's own character count, so this is a map
-/// of the chapter rather than decoration: it shows how much is left, and a tap
-/// or a drag seeks to the sentence under the finger. Deterministic rather than
-/// random, so it does not reshuffle itself on every rebuild.
-/// The audiobook-style waveform, and the way to seek by position.
-///
-/// Bar heights come from each sentence's own character count, so this is a map
-/// of the chapter rather than decoration: it shows how much is left, and a tap
-/// or a drag seeks to the sentence under the finger.
-///
-/// ### Why the drag value is local to this widget
-///
-/// It used to be lifted into the sheet so the thumb could follow a drag, and a
-/// tap was written as "remember on tap-down, commit on tap-up". That is broken:
-/// a tap commits against the value captured when this widget was BUILT, and no
-/// rebuild happens between a tap-down and its tap-up, so the commit read null,
-/// the tap did nothing, and the value left behind in the parent was then
-/// committed by whatever the reader touched next - which is how a tap near the
-/// left could throw the narration to the end of the chapter.
-///
-/// Holding the drag here and committing a tap straight from the tap's own
-/// position removes the value that could go stale. There is nothing to leak.
-class _WaveformProgress extends StatefulWidget {
-  const _WaveformProgress({
-    required this.cubit,
-    required this.state,
-    required this.current,
-  });
-
-  final TtsCubit cubit;
-  final TtsState state;
-  final int current;
-
-  @override
-  State<_WaveformProgress> createState() => _WaveformProgressState();
-}
-
-class _WaveformProgressState extends State<_WaveformProgress> {
-  /// Sentence under the finger mid-drag, or null when the cubit is the
-  /// authority. Local so the thumb cannot be driven by a value from a previous
-  /// gesture.
-  int? _drag;
-
-  static const double _inset = 4;
-  static const int _barGap = 2;
-  static const int _maxBars = 86;
-
-  /// The sentence at [dx], or null when there is nothing to seek between.
-  int? _indexAt(double dx, double width, int total) {
-    if (total < 2) return null;
-    final usable = width - _inset * 2;
-    if (usable <= 0) return null;
-    final fraction = ((dx - _inset) / usable).clamp(0.0, 1.0);
-    return (fraction * (total - 1)).round();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = widget.state;
-    final total = state.totalSentences;
-    final shown = _drag ?? widget.current;
-    final progress = total < 2
-        ? 0.0
-        : (shown / (total - 1)).clamp(0.0, 1.0).toDouble();
-
-    final weights = <double>[];
-    for (var i = 0; i < total; i++) {
-      final s = i < state.sentences.length ? state.sentences[i] : null;
-      final chars = s == null ? 40 : s.text.trim().length;
-      weights.add(0.22 + (chars / 120).clamp(0.0, 1.0) * 0.78);
-    }
-
-    final canStep = total > 1;
-    return Semantics(
-      slider: canStep,
-      label: 'Audiobook progress',
-      value: canStep ? 'Sentence ${shown + 1} of $total' : 'No sentences',
-      onIncrease: canStep ? () => widget.cubit.seek(shown + 1) : null,
-      // Required wherever the matching action exists, or the semantics tree
-      // asserts on a node that can increase but reports no new value.
-      increasedValue: canStep
-          ? 'Sentence ${(shown + 1).clamp(0, total - 1) + 1} of $total'
-          : null,
-      onDecrease: canStep ? () => widget.cubit.seek(shown - 1) : null,
-      decreasedValue: canStep
-          ? 'Sentence ${(shown - 1).clamp(0, total - 1) + 1} of $total'
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22),
-        child: LayoutBuilder(
-          builder: (context, c) => GestureDetector(
-            key: const ValueKey('audiobook-waveform'),
-            behavior: HitTestBehavior.opaque,
-            // Committed from the tap's own position, on the way up. No remembered
-            // value, so no stale one.
-            onTapUp: (d) {
-              final index = _indexAt(d.localPosition.dx, c.maxWidth, total);
-              if (index != null) widget.cubit.seek(index);
-            },
-            onHorizontalDragStart: total > 1
-                ? (d) {
-                    final index = _indexAt(
-                      d.localPosition.dx,
-                      c.maxWidth,
-                      total,
-                    );
-                    if (index != null) setState(() => _drag = index);
-                  }
-                : null,
-            onHorizontalDragUpdate: total > 1
-                ? (d) {
-                    final index = _indexAt(
-                      d.localPosition.dx,
-                      c.maxWidth,
-                      total,
-                    );
-                    if (index != null) setState(() => _drag = index);
-                  }
-                : null,
-            onHorizontalDragEnd: total > 1
-                ? (_) {
-                    final index = _drag;
-                    setState(() => _drag = null);
-                    if (index != null) widget.cubit.seek(index);
-                  }
-                : null,
-            onHorizontalDragCancel: () => setState(() => _drag = null),
-            child: CustomPaint(
-              size: Size(c.maxWidth, 44),
-              painter: _WaveformPainter(
-                weights: weights,
-                progress: progress,
-                barGap: _barGap,
-                maxBars: _maxBars,
-              ),
-            ),
-          ),
-        ),
+    final top = viewport * _TranscriptState._padTopFraction;
+    return ListView.builder(
+      key: const ValueKey('audiobook-transcript'),
+      controller: _scroll,
+      padding: EdgeInsets.only(
+        top: top,
+        bottom: viewport * _TranscriptState._padBottomFraction,
+        left: _gutter,
+        right: _gutter,
       ),
-    );
-  }
-}
-
-class _WaveformPainter extends CustomPainter {
-  const _WaveformPainter({
-    required this.weights,
-    required this.progress,
-    required this.barGap,
-    required this.maxBars,
-  });
-
-  final List<double> weights;
-  final double progress;
-  final int barGap;
-  final int maxBars;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (weights.isEmpty || size.width <= 0) return;
-    final count = math.min(weights.length, maxBars);
-    final gap = barGap.toDouble();
-    final barWidth = math.max(1.5, (size.width - gap * (count - 1)) / count);
-    final played = Paint()
-      ..color = AppColors.textPrimary
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = barWidth;
-    final unplayed = Paint()
-      ..color = Colors.white24
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = barWidth;
-    final centreY = size.height / 2;
-
-    for (var i = 0; i < count; i++) {
-      final h = (size.height * weights[i]).clamp(4.0, size.height);
-      final x = 4 + i * (barWidth + gap);
-      // Bars are a map of the chapter, so the filled portion follows the
-      // sentence index rather than an equal share of the bars.
-      final fraction = count < 2 ? 0.0 : i / (count - 1);
-      canvas.drawLine(
-        Offset(x, centreY - h / 2),
-        Offset(x, centreY + h / 2),
-        fraction <= progress ? played : unplayed,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_WaveformPainter old) =>
-      old.progress != progress || old.weights != weights;
-}
-
-class _CounterRow extends StatelessWidget {
-  const _CounterRow({required this.state, required this.current});
-
-  final TtsState state;
-  final int current;
-
-  /// Rough time left, from the characters still to read at the current rate.
-  ///
-  /// An estimate, and deliberately coarse: there is no duration per sentence,
-  /// and a real voice's pace with its punctuation pauses cannot be derived from
-  /// characters. ~900 characters a minute at 1.0x is a reasonable middle.
-  String _left() {
-    final total = state.totalSentences;
-    if (total == 0) return '';
-    var chars = 0;
-    for (var i = current; i < total && i < state.sentences.length; i++) {
-      chars += state.sentences[i].text.trim().length;
-    }
-    if (chars == 0) return '';
-    final perMinute = 900.0 * (state.rate <= 0 ? 1.0 : state.rate);
-    return '~${(chars / perMinute).ceil()} min left';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = state.totalSentences;
-    final left = _left();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(26, 2, 26, 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Flexible, so a long chapter count and a long time-left share the
-          // row instead of overflowing it. On a narrow screen with a large
-          // system font these two together are wider than the player.
-          Flexible(
+      itemCount: sentences.length,
+      itemBuilder: (context, i) {
+        final active = i == widget.current;
+        return GestureDetector(
+          key: _keys.putIfAbsent(i, GlobalKey.new),
+          behavior: HitTestBehavior.opaque,
+          onTap: active ? null : () => widget.onPick(i),
+          child: Padding(
+            // A second, stable key alongside the measurement key: the
+            // GlobalKey moves with the row it is attached to, and a test - or a
+            // future gesture aimed at one sentence - needs to name a row by
+            // index.
+            key: ValueKey('audiobook-row-$i'),
+            padding: const EdgeInsets.symmetric(vertical: _rowPadding),
             child: Text(
-              total == 0 ? '0 / 0' : '${current + 1} / $total',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
+              sentences[i].text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: active
+                    ? AppColors.textPrimary
+                    : AppColors.textPrimary.withValues(alpha: 0.55),
+                fontSize: active ? _fontActive : _fontIdle,
+                height: _lineHeight,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
           ),
-          if (left.isNotEmpty)
-            Flexible(
-              child: Text(
-                left,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
-class _TransportRow extends StatelessWidget {
-  const _TransportRow({
-    required this.cubit,
-    required this.state,
-    required this.current,
+/// The one row of transport, plus the chapter list behind its first button.
+class _PlayerBar extends StatelessWidget {
+  const _PlayerBar({
     required this.canPreviousChapter,
     required this.canNextChapter,
     required this.onPreviousChapter,
     required this.onNextChapter,
+    required this.onBack,
+    required this.onForward,
+    required this.onPlayPause,
+    required this.playing,
+    required this.rate,
+    required this.sleepMinutes,
+    required this.onRate,
+    required this.onSleep,
+    required this.onChapters,
+  });
+
+  final bool canPreviousChapter;
+  final bool canNextChapter;
+  final VoidCallback onPreviousChapter;
+  final VoidCallback onNextChapter;
+  final VoidCallback? onBack;
+  final VoidCallback? onForward;
+  final VoidCallback onPlayPause;
+  final bool playing;
+  final double rate;
+  final int sleepMinutes;
+  final VoidCallback onRate;
+  final VoidCallback onSleep;
+  final VoidCallback? onChapters;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+      child: Row(
+        children: [
+          _BarButton(
+            key: const ValueKey('audiobook-chapters'),
+            icon: Icons.list_rounded,
+            tooltip: 'Chapters',
+            onTap: onChapters,
+          ),
+          _BarButton(
+            key: const ValueKey('audiobook-prev-chapter'),
+            icon: Icons.skip_previous_rounded,
+            tooltip: 'Previous chapter',
+            onTap: canPreviousChapter ? onPreviousChapter : null,
+          ),
+          _BarButton(
+            key: const ValueKey('audiobook-minus-sentence'),
+            icon: Icons.chevron_left_rounded,
+            tooltip: 'Back one sentence',
+            onTap: onBack,
+          ),
+          Expanded(
+            child: Center(
+              child: _PlayButton(
+                key: const ValueKey('audiobook-play'),
+                playing: playing,
+                onTap: onPlayPause,
+              ),
+            ),
+          ),
+          _BarButton(
+            key: const ValueKey('audiobook-plus-sentence'),
+            icon: Icons.chevron_right_rounded,
+            tooltip: 'Forward one sentence',
+            onTap: onForward,
+          ),
+          _BarButton(
+            key: const ValueKey('audiobook-next-chapter'),
+            icon: Icons.skip_next_rounded,
+            tooltip: 'Next chapter',
+            onTap: canNextChapter ? onNextChapter : null,
+          ),
+          _BarButton(
+            key: const ValueKey('audiobook-speed'),
+            label: sleepMinutes == 0
+                ? '${rate.toStringAsFixed(rate == rate.roundToDouble() ? 0 : 1)}x'
+                : '${sleepMinutes}m',
+            tooltip: 'Speed· long-press for the sleep timer',
+            onTap: onRate,
+            onLongPress: onSleep,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarButton extends StatelessWidget {
+  const _BarButton({
+    super.key,
+    required this.tooltip,
+    this.icon,
+    this.label,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final String tooltip;
+  final IconData? icon;
+  final String? label;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Expanded(
+      child: Tooltip(
+        message: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          radius: 22,
+          child: SizedBox(
+            height: 48,
+            child: Center(
+              child: label != null
+                  ? Text(
+                      label!,
+                      style: TextStyle(
+                        color: enabled
+                            ? AppColors.textSecondary
+                            : AppColors.textTertiary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    )
+                  : Icon(
+                      icon,
+                      size: 23,
+                      color: enabled
+                          ? AppColors.textSecondary
+                          : AppColors.textTertiary,
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({super.key, required this.playing, required this.onTap});
+
+  final bool playing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: playing ? 'Pause' : 'Play',
+      child: InkResponse(
+        radius: 30,
+        onTap: onTap,
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+          child: Icon(
+            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 30,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChapterSheet extends StatelessWidget {
+  const _ChapterSheet({
+    required this.labels,
+    required this.titles,
+    required this.current,
     required this.onShuffle,
   });
 
-  final TtsCubit cubit;
-  final TtsState state;
+  final List<String> labels;
+  final List<String> titles;
   final int current;
-  final bool Function() canPreviousChapter;
-  final bool Function() canNextChapter;
-  final VoidCallback onPreviousChapter;
-  final VoidCallback onNextChapter;
   final VoidCallback onShuffle;
 
   @override
   Widget build(BuildContext context) {
-    final total = state.totalSentences;
-    final canStep = total > 0;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          IconButton(
-            tooltip: 'Jump to a random sentence',
-            onPressed: canStep ? onShuffle : null,
-            icon: const Icon(Icons.shuffle_rounded),
-            color: AppColors.textSecondary,
-          ),
-          // Chapter, not sentence. These are the transport's skip-track buttons
-          // and they sat either side of the play control doing exactly what
-          // -1 Sent / +1 Sent do, two controls for one job. Stepping a sentence
-          // is the quick row's; skipping a chapter is this row's.
-          IconButton(
-            key: const ValueKey('audiobook-prev-chapter'),
-            tooltip: 'Previous chapter',
-            onPressed: canPreviousChapter() ? onPreviousChapter : null,
-            icon: const Icon(Icons.skip_previous_rounded),
-            iconSize: 32,
-            color: AppColors.textPrimary,
-          ),
-          IconButton(
-            key: const ValueKey('audiobook-play'),
-            tooltip: state.isSpeaking ? 'Pause' : 'Play',
-            onPressed: state.available && canStep ? cubit.toggle : null,
-            icon: Icon(
-              state.isSpeaking ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            ),
-            iconSize: 44,
-            color: AppColors.bg,
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.textPrimary,
-              fixedSize: const Size(72, 72),
-            ),
-          ),
-          IconButton(
-            key: const ValueKey('audiobook-next-chapter'),
-            tooltip: 'Next chapter',
-            onPressed: canNextChapter() ? onNextChapter : null,
-            icon: const Icon(Icons.skip_next_rounded),
-            iconSize: 32,
-            color: AppColors.textPrimary,
-          ),
-          // Balances the shuffle on the left so the transport stays centred.
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.cubit, required this.state});
-
-  final TtsCubit cubit;
-  final TtsState state;
-
-  static const List<int> _sleepCycle = <int>[0, 5, 15, 30, 60];
-
-  @override
-  Widget build(BuildContext context) {
-    final canStep = state.totalSentences > 0;
-    final sleepLabel = state.sleepTimerMinutes == 0
-        ? 'Sleep Timer'
-        : '${state.sleepTimerMinutes}m';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 8),
-      child: Row(
-mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // Each action gets an equal share and may shrink within it. Five
-          // labelled actions are wider than a small phone once the system font
-          // is scaled up, and the row used to overflow rather than give the
-          // labels room to ellipsise.
-          Flexible(
-            child: _QuickAction(
-              key: const ValueKey('audiobook-sleep'),
-              icon: Icons.timer_outlined,
-              label: sleepLabel,
-              onTap: () {
-                final at = _sleepCycle.indexOf(state.sleepTimerMinutes);
-                cubit.setSleepTimer(_sleepCycle[(at + 1) % _sleepCycle.length]);
-              },
-            ),
-          ),
-          Flexible(
-            child: _QuickAction(
-              key: const ValueKey('audiobook-minus-sentence'),
-              icon: Icons.keyboard_double_arrow_left_rounded,
-              label: '-1 Sent',
-              onTap: canStep ? () => cubit.skip(-1) : null,
-            ),
-          ),
-          Flexible(
-            child: _QuickAction(
-              key: const ValueKey('audiobook-plus-sentence'),
-              icon: Icons.keyboard_double_arrow_right_rounded,
-              label: '+1 Sent',
-              onTap: canStep ? () => cubit.skip(1) : null,
-            ),
-          ),
-          Flexible(
-            child: _QuickAction(
-              key: const ValueKey('audiobook-speed'),
-              icon: Icons.speed_rounded,
-              label: '${state.rate.toStringAsFixed(1)}x',
-              onTap: () => cubit.setRate(TtsSpeed.next(state.rate)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  const _QuickAction({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tint = onTap == null ? AppColors.textTertiary : AppColors.textPrimary;
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: tint),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                maxLines: 1,
-                // Five actions across a narrow screen with a large system font
-                // is more than they take. Ellipsising the label keeps every
-                // action reachable instead of letting the row overflow.
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: tint, fontSize: 11.5),
-              ),
-            ],
-          ),
+    return SafeArea(
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
         ),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Chapters',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('audiobook-shuffle'),
+                    onPressed: onShuffle,
+                    icon: const Icon(Icons.shuffle_rounded, size: 18),
+                    label: const Text('Random'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: labels.length,
+                itemBuilder: (context, i) => InkWell(
+                  key: ValueKey('audiobook-chapter-$i'),
+                  onTap: () => Navigator.of(context).pop(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 36,
+                          child: Text(
+                            labels[i],
+                            style: TextStyle(
+                              color: i == current
+                                  ? AppColors.accent
+                                  : AppColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            i < titles.length ? titles[i] : '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: i == current
+                                  ? AppColors.accent
+                                  : AppColors.textPrimary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The cover, blurred and dimmed, behind everything.
+///
+/// In a [RepaintBoundary] so a repaint never re-runs the blur.
+class _BlurredBackdrop extends StatelessWidget {
+  const _BlurredBackdrop({this.cover});
+
+  final String? cover;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (cover != null && cover!.isNotEmpty)
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 46, sigmaY: 46),
+              child: CachedNetworkImage(
+                imageUrl: cover!,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.bg.withValues(alpha: 0.80),
+                  AppColors.bg.withValues(alpha: 0.93),
+                  AppColors.bg,
+                ],
+                stops: const [0, 0.45, 1],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

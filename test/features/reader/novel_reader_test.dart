@@ -1368,6 +1368,11 @@ void main() {
         // chapter, or one arrived at by a skip. The chapter's own title, never
         // the sentence index: that is local to a chapter and says nothing about
         // which chapter this is.
+        //
+        // It used to be checked by opening the second page and looking at the
+        // heading there. There is no second page any more, and the guarantee is
+        // stronger for it: the chapter names itself in the header of the only
+        // page there is.
         final tts = _StubTtsCubit();
         sl.registerSingleton<TtsCubit>(tts);
         addTearDown(tts.close);
@@ -1376,11 +1381,14 @@ void main() {
         await tester.pumpWidget(playerHarness());
         await tester.pumpAndSettle();
 
-        expect(find.text('c1'), findsWidgets);
-
-        await tester.tap(find.byKey(const ValueKey('audiobook-sheet-toggle')));
-        await tester.pumpAndSettle();
-        expect(find.text('c1'), findsWidgets);
+        // The label and the title share one line in the header, so this is a
+        // containing match rather than an exact one.
+        expect(find.textContaining('c1'), findsWidgets);
+        expect(
+          find.byKey(const ValueKey('audiobook-open-chapters')),
+          findsOneWidget,
+          reason: 'the chapter header is what names the chapter',
+        );
         await disposeReader(tester);
       });
     });
