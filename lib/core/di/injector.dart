@@ -1070,10 +1070,11 @@ await TorrentPrefs.init();
   sl.registerLazySingleton<HomeCubit>(
     () {
       final cubit = HomeCubit(sl<CatalogueRepository>());
-      // Novel-only home is built from the pinned sources, so a pin/unpin has to
-      // refresh it. Bound here because a cubit with no listener would keep
-      // showing the previous source's catalogue until something else happened to
-      // reload the page.
+      // Pinning is an order, not a filter, on novel-only home - every installed
+      // source gets a row and pinned ones sort first - so a pin or unpin still
+      // changes what home shows and has to refresh it. Bound here because a
+      // cubit with no listener would keep showing the previous arrangement until
+      // something else happened to reload the page.
       cubit.bindPinnedSources();
       return cubit;
     },

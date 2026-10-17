@@ -12,6 +12,7 @@ import '../../../core/error/exceptions.dart';
 import '../../../core/error/network_failure.dart';
 import '../../../core/lnreader/lnreader_manager.dart';
 import '../../../core/lnreader/novel_cloudflare.dart';
+import '../../../core/playback/source_health_store.dart';
 import '../../../core/models/home_row.dart';
 import '../../../core/models/home_section.dart';
 import '../../../core/models/media_item.dart';
@@ -185,69 +186,182 @@ class HomeCubit extends Cubit<HomeState> {
   /// The Z Mode browse kind for this load, or null when the home is
   /// source-backed. Read per load (not cached) because mode and stream kind
   /// change under the cubit without a new registration.
-  /// Home rows built from the user's pinned novel sources.
+  /// How many novel source rows Home will show.
+///
+/// The LNReader catalogue is 260-odd extensions deep. Asking a reader who
+/// installed all of them to scroll 260 rows on the app's front page is not
+/// showing them more, it is showing them nothing - and every one of them spins
+/// up its own JS runtime to answer, so it costs real seconds as well as real
+/// space. Five is enough to be a shelf rather than a page, and matches what the
+/// picker would have made anyone pin by hand.
+static const int _maxHomeNovelRows = 5;
+
+/// Sources a reader who has not used any yet is most likely to want.
+///
+/// A first-run fallback, not a ranking, and consulted only when nothing is
+/// pinned and nothing has been probed - which is exactly the state of a fresh
+/// install. Matched on a normalised display name because LNReader plugin names
+/// are not tidy: the same site turns up as "NovelFire", "NovelFire.net" and
+/// "Friction Zone" across extensions, so the comparison keeps letters and
+/// digits only and drops everything else.
+static const List<String> _kFirstRunFavourites = [
+  'novelfire',
+  'novelarchive',
+  'chikari',
+  'fansmtl',
+  'frictionzone',
+];
+
+String _normaliseSourceName(String raw) {
+  final out = StringBuffer();
+  for (final unit in raw.toLowerCase().runes) {
+    final c = String.fromCharCode(unit);
+    if (c.codeUnitAt(0) >= 0x61 && c.codeUnitAt(0) <= 0x7a ||
+        c.codeUnitAt(0) >= 0x30 && c.codeUnitAt(0) <= 0x39) {
+      out.write(c);
+    }
+  }
+  return out.toString();
+}
+
+/// Home rows built from the user's installed novel sources.
   ///
-  /// Returns null when this build or this state has nothing pinned, which is the
-  /// signal to fall back to the ordinary catalogue rather than show an empty
-  /// home — a fresh install has no pins and must not come up blank.
+  /// Each source contributes one row, titled with the source's own name rather
+  /// than the provider's section title. Two sources both calling their feed
+  /// "Popular" would otherwise render as two identically-titled rows with no way
+  /// to tell whose content is whose.
   ///
-  /// Each pinned source contributes one row, titled with the source's own name
-  /// rather than the provider's section title. Two sources both calling their
-  /// feed "Popular" would otherwise render as two identically-titled rows with
-  /// no way to tell whose content is whose.
-  Future<List<HomeSection>?> _pinnedNovelSections() async {
+  /// Every installed novel source gets a row, streamed as each one answers.
+  ///
+  /// Returns null - meaning "fall back to the catalogue" - only when there is no
+  /// candidate at all, or when nothing answered. Not when nothing is pinned.
+  Future<List<HomeSection>?> _novelSourceSections({
+    required void Function(List<HomeSection> sofar) onProgress,
+    required int generation,
+  }) async {
     if (!kNovelOnly) return null;
-
-    // No `isRegistered` guard: PinnedSources is a static utility initialised at
-    // boot, not a get_it registration, so a registration check here is always
-    // false and silently disables the whole feature.
-    final pinnedIds = PinnedSources.notifier.value
-        .where((id) => id.startsWith('lnr:'))
-        .toList(growable: false);
-    if (pinnedIds.isEmpty) return null;
     if (!_sl.isRegistered<SourceRepository>()) return null;
+    final repo = _sl<SourceRepository>();
+    final manager =
+        _sl.isRegistered<LnReaderManager>() ? _sl<LnReaderManager>() : null;
+    if (manager == null) return null;
 
-    final repo = _sl.isRegistered<SourceRepository>() ? _sl<SourceRepository>() : null;
-    if (repo == null) return null;
-    final manager = _sl.isRegistered<LnReaderManager>() ? _sl<LnReaderManager>() : null;
+    // Pinned first, then everything else. Pinning is an ORDER, not a filter -
+    // it always was on the source picker - and it was only ever a filter here
+    // because this method was the one place that read the pin list as if it
+    // were the source list. A reader who pinned nothing got an empty Home,
+    // which reads as "nothing is installed" rather than "you chose nothing".
+    final health =
+        _sl.isRegistered<SourceHealthStore>() ? _sl<SourceHealthStore>() : null;
+    // A source whose last probe found it dead is left off - but only while that
+    // mark is FRESH, which is what [SourceHealthStore.isSkippable] means. A
+    // stale dead mark reads as ok upstream and means the source is due a retry;
+    // hiding on that would hide it for good, since nothing clears a stale mark
+    // on its own. Never probed reads as skippable=false, so a fresh install
+    // still shows everything it has.
+    final usable = [
+      for (final m in manager.installedSources)
+        if (!(health?.isSkippable(m.id) ?? false)) m,
+    ];
+
+    // Ranked, then truncated. Truncation is not a nicety here: the catalogue
+    // carries 260-odd extensions and a reader who installed them all is not
+    // asking for 260 rows of Home, they are the reason capping exists.
+    //
+    //  1. Pinned, in pin order - the reader said so out loud.
+    //  2. Proved working. The closest thing to "most used" that the app can
+    //     actually answer today, because there is no usage counter yet: a source
+    //     with a fresh ok record has been reached successfully at least once.
+    //  3. The first-run five, which is what a reader who has neither pinned
+    //     nor used anything is served instead.
+    //  4. The rest, in install order.
+    //
+    // Steps 2 and 3 are not in tension in practice: on the first run nothing
+    // has been probed, so step 2 is empty and the five come up.
+    final pinned = PinnedSources.notifier.value.toSet();
+    final working = {
+      for (final m in usable)
+        if (health?.statusOf(m.id) == SourceHealth.ok) m.id,
+    };
+    final firstRun = {
+      for (final m in usable)
+        if (_kFirstRunFavourites.contains(_normaliseSourceName(m.name))) m.id,
+    };
+
+    final ranked = <String>[
+      for (final m in usable)
+        if (pinned.contains(m.id)) m.id,
+      for (final m in usable)
+        if (!pinned.contains(m.id) && working.contains(m.id)) m.id,
+      for (final m in usable)
+        if (!pinned.contains(m.id) &&
+            !working.contains(m.id) &&
+            firstRun.contains(m.id)) m.id,
+      for (final m in usable)
+        if (!pinned.contains(m.id) &&
+            !working.contains(m.id) &&
+            !firstRun.contains(m.id)) m.id,
+    ];
+    final candidates = ranked.take(_maxHomeNovelRows).toList();
+    if (candidates.isEmpty) return null;
 
     final out = <HomeSection>[];
-    // Sequential rather than parallel: each source spins up a JS plugin runtime
-    // on first use, and a dozen of those at once is a stall, not a speed-up.
-    for (final id in pinnedIds) {
-      final pluginId = id.substring(4);
-      final name = manager?.metaFor(pluginId)?.name ?? id;
-      try {
-        final sections = await repo
-            .home(sourceId: id)
-            .timeout(const Duration(seconds: 25));
-        final first = sections.where((s) => s.items.isNotEmpty).firstOrNull;
-        if (first == null) {
-          // Said out loud rather than dropped in silence. A pinned source that
-          // quietly stops appearing on Home is indistinguishable from one that
-          // was never pinned, which is the version of this that cost an
-          // afternoon: eight pinned, two rows, no clue why.
-          debugPrint('[home] pinned source $id has no home content');
-          continue;
+
+    // A few at a time. Each source spins up its own JS runtime on first use, so
+    // firing every one of them together is a stall rather than a speed-up - the
+    // reason this has always been sequential. Four keeps a single slow source
+    // from holding up the rest of the page, while staying well short of the
+    // point where the runtimes contend with each other.
+    const fanOut = 4;
+    var next = 0;
+
+    Future<void> worker() async {
+      while (true) {
+        if (isClosed || generation != _gen) return;
+        final index = next++;
+        if (index >= candidates.length) return;
+        final id = candidates[index];
+        final name = manager.metaFor(id.substring(4))?.name ?? id;
+        try {
+          final sections = await repo
+              .home(sourceId: id)
+              .timeout(const Duration(seconds: 25));
+          // A newer load started while this was in flight.
+          if (isClosed || generation != _gen) return;
+          final first = sections.where((s) => s.items.isNotEmpty).firstOrNull;
+          if (first == null) {
+            // Said out loud rather than dropped in silence, for the same reason
+            // as before: a source that quietly stops appearing is
+            // indistinguishable from one that was never installed.
+            debugPrint('[home] source $id has no home content');
+            continue;
+          }
+          out.add(
+            HomeSection(
+              title: name,
+              items: first.items,
+              // Keep the provider's own paging kind so "See all" still pages
+              // the feed this row came from, not a generic one.
+              more: first.more,
+            ),
+          );
+          // Publish as each answers rather than after the slowest one finishes.
+          // Home is the screen this change is about; making the reader wait for
+          // the worst source to time out before showing the other forty would
+          // trade one bad behaviour for a worse one.
+          onProgress(List<HomeSection>.unmodifiable(out));
+        } catch (e) {
+          // One unreachable source must not empty the whole page.
+          debugPrint('[home] source $id failed: $e');
         }
-        out.add(
-          HomeSection(
-            title: name,
-            items: first.items,
-            // Keep the provider's own paging kind so "See all" still pages the
-            // feed this row came from, not a generic one.
-            more: first.more,
-          ),
-        );
-      } catch (e) {
-        // One dead source must not empty the whole home page.
-        debugPrint('[home] pinned source $id failed: $e');
       }
     }
-    debugPrint(
-      '[home] pinned rows: ${out.length} from $pinnedIds sources '
-      '(${pinnedIds.length - out.length} produced nothing)',
-    );
+
+    await Future.wait([
+      for (var i = 0; i < fanOut && i < candidates.length; i++) worker(),
+    ]);
+    // Nothing answered. Fall back to the catalogue rather than showing a Home
+    // that is blank for a reason the reader cannot act on.
     return out.isEmpty ? null : out;
   }
 
@@ -365,11 +479,26 @@ class HomeCubit extends Cubit<HomeState> {
     // Novel-only: the catalogue's own source rows are metadata titles from
     // whatever [CatalogueRouter] resolves (Z Mode, which defaults on, hands them
     // to AniList). Those are anime/manga catalogue art the user cannot read
-    // from, in an app that can only read novels. Pinned sources are the ones they
-    // chose, so their catalogues are what home shows.
-    final pinned = await _pinnedNovelSections();
-    if (pinned != null) {
-      sections = pinned;
+    // from, in an app that can only read novels. The installed novel sources
+    // are the ones they chose, so their catalogues are what home shows.
+    //
+    // Streamed: each row is published the moment its source answers, so the
+    // page fills in while the slower sources are still loading.
+    final novel = await _novelSourceSections(
+      generation: gen,
+      onProgress: (sofar) {
+        if (isClosed || gen != _gen) return;
+        emit(
+          state.copyWith(
+            sections: sofar,
+            rows: _mergedRows(sofar, kind, null, null),
+            loading: true,
+          ),
+        );
+      },
+    );
+    if (novel != null) {
+      sections = novel;
     } else {
       try {
         final homeFuture = _repo.home();
