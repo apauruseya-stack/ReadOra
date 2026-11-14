@@ -199,7 +199,6 @@
 			}
 		}
 	},
-	"contributors": "Mitwirkende",
 	"website": "Webseite",
 	"communityChat": "Community-Chat",
 	"joinTheServer": "Server beitreten",
@@ -213,7 +212,6 @@
 	"betaUpdatesSubtitle": "Vorab-Builds früher — kann instabil sein",
 	"supportTheApp": "Die App unterstützen",
 	"buyMeACoffee": "Kauf mir einen Kaffee",
-	"leadDeveloper": "Lead-Entwickler",
 	"addCloudStreamRepository": "CloudStream-Repo hinzufügen",
 	"installCloudStreamSources": "CloudStream-Quellen installieren",
 	"connectionsTvSubtitle": "AniList, MyAnimeList, Simkl",
@@ -391,7 +389,6 @@
 	"ifItWontLoad": "Wenn es nicht lädt",
 	"saveForOffline": "Für offline speichern",
 	"commonQuestions": "Häufige Fragen",
-	"noCommunityContributorsYet": "Noch keine Community-Mitwirkenden.",
 	"paged": "Seitenweise",
 	"vertical": "Vertikal",
 	"tapZonesReset": "Tippzonen zurückgesetzt",
@@ -1602,7 +1599,6 @@
 	"social": "Sozial",
 	"appSection": "App",
 	"team": "Team",
-	"communityContributors": "Community-Mitwirkende",
 	"accentColour": "Akzentfarbe",
 	"display": "Anzeige",
 	"appIcon": "App-Symbol",

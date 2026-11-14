@@ -1213,12 +1213,6 @@ abstract class AppLocalizations {
   /// **'v{version}'**
   String versionLabel(String version);
 
-  /// No description provided for @contributors.
-  ///
-  /// In en, this message translates to:
-  /// **'Contributors'**
-  String get contributors;
-
   /// No description provided for @website.
   ///
   /// In en, this message translates to:
@@ -1296,12 +1290,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Buy me a coffee'**
   String get buyMeACoffee;
-
-  /// No description provided for @leadDeveloper.
-  ///
-  /// In en, this message translates to:
-  /// **'Lead Developer'**
-  String get leadDeveloper;
 
   /// No description provided for @addCloudStreamRepository.
   ///
@@ -1986,12 +1974,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Common questions'**
   String get commonQuestions;
-
-  /// No description provided for @noCommunityContributorsYet.
-  ///
-  /// In en, this message translates to:
-  /// **'No community contributors yet.'**
-  String get noCommunityContributorsYet;
 
   /// No description provided for @paged.
   ///
@@ -6487,12 +6469,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Team'**
   String get team;
-
-  /// No description provided for @communityContributors.
-  ///
-  /// In en, this message translates to:
-  /// **'Community Contributors'**
-  String get communityContributors;
 
   /// No description provided for @accentColour.
   ///

@@ -199,7 +199,6 @@
 			}
 		}
 	},
-	"contributors": "貢獻者",
 	"website": "網站",
 	"communityChat": "社群聊天",
 	"joinTheServer": "加入伺服器",
@@ -213,7 +212,6 @@
 	"betaUpdatesSubtitle": "提前取得預先發布版本 — 可能不穩定",
 	"supportTheApp": "支持此 App",
 	"buyMeACoffee": "請我喝杯咖啡",
-	"leadDeveloper": "主要開發者",
 	"addCloudStreamRepository": "新增 CloudStream 儲庫",
 	"installCloudStreamSources": "安裝 CloudStream 來源",
 	"connectionsTvSubtitle": "AniList、MyAnimeList、Simkl",
@@ -391,7 +389,6 @@
 	"ifItWontLoad": "無法載入時",
 	"saveForOffline": "儲存以便離線觀看",
 	"commonQuestions": "常見問題",
-	"noCommunityContributorsYet": "還沒有社群貢獻者。",
 	"paged": "分頁",
 	"vertical": "垂直的",
 	"tapZonesReset": "已重設點按區域",
@@ -1602,7 +1599,6 @@
 	"social": "社會的",
 	"appSection": "應用程式",
 	"team": "團隊",
-	"communityContributors": "社區貢獻者",
 	"accentColour": "強調色",
 	"display": "展示",
 	"appIcon": "應用程式圖標",

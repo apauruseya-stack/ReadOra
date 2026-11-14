@@ -199,7 +199,6 @@
 			}
 		}
 	},
-	"contributors": "貢献者",
 	"website": "ウェブサイト",
 	"communityChat": "コミュニティチャット",
 	"joinTheServer": "サーバーに参加",
@@ -213,7 +212,6 @@
 	"betaUpdatesSubtitle": "先行ビルドを早めに入手 — 不安定な場合があります",
 	"supportTheApp": "アプリを支援",
 	"buyMeACoffee": "コーヒーをおごる",
-	"leadDeveloper": "リード開発者",
 	"addCloudStreamRepository": "CloudStream リポジトリを追加",
 	"installCloudStreamSources": "CloudStream ソースをインストール",
 	"connectionsTvSubtitle": "AniList、MyAnimeList、Simkl",
@@ -391,7 +389,6 @@
 	"ifItWontLoad": "読み込めないとき",
 	"saveForOffline": "オフライン用に保存",
 	"commonQuestions": "よくある質問",
-	"noCommunityContributorsYet": "コミュニティ貢献者はまだいません。",
 	"paged": "ページ送り",
 	"vertical": "垂直",
 	"tapZonesReset": "タップ領域をリセットしました",
@@ -1602,7 +1599,6 @@
 	"social": "社交",
 	"appSection": "アプリ",
 	"team": "チーム",
-	"communityContributors": "コミュニティ貢献者",
 	"accentColour": "アクセントカラー",
 	"display": "画面",
 	"appIcon": "アプリのアイコン",

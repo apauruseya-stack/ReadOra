@@ -598,9 +598,6 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
-  String get contributors => 'Collaboratori';
-
-  @override
   String get website => 'Sito';
 
   @override
@@ -639,9 +636,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get buyMeACoffee => 'Offrimi un caffè';
-
-  @override
-  String get leadDeveloper => 'Sviluppatore principale';
 
   @override
   String get addCloudStreamRepository => 'Aggiungi repository CloudStream';
@@ -1041,10 +1035,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get commonQuestions => 'Domande frequenti';
-
-  @override
-  String get noCommunityContributorsYet =>
-      'Nessun collaboratore della community ancora.';
 
   @override
   String get paged => 'A pagine';
@@ -3607,9 +3597,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get team => 'Squadra';
-
-  @override
-  String get communityContributors => 'Contributori della comunità';
 
   @override
   String get accentColour => 'Colore d\'accento';

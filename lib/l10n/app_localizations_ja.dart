@@ -579,9 +579,6 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get contributors => '貢献者';
-
-  @override
   String get website => 'ウェブサイト';
 
   @override
@@ -619,9 +616,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get buyMeACoffee => 'コーヒーをおごる';
-
-  @override
-  String get leadDeveloper => 'リード開発者';
 
   @override
   String get addCloudStreamRepository => 'CloudStream リポジトリを追加';
@@ -1011,9 +1005,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get commonQuestions => 'よくある質問';
-
-  @override
-  String get noCommunityContributorsYet => 'コミュニティ貢献者はまだいません。';
 
   @override
   String get paged => 'ページ送り';
@@ -3509,9 +3500,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get team => 'チーム';
-
-  @override
-  String get communityContributors => 'コミュニティ貢献者';
 
   @override
   String get accentColour => 'アクセントカラー';

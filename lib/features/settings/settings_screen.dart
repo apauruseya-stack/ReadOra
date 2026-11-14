@@ -1252,9 +1252,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       keywords: 'logs share diagnostic debug bug report crash',
       onTap: _sendLogReport,
     ),
-    // About — a single destination holding the app info, contributors,
-    // social links, updates, beta toggle and support (so the section opens
-    // straight to it — no nested "About" sub-page).
+    // About — a single destination holding the app info, social links, updates,
+    // beta toggle and support (so the section opens straight to it — no nested
+    // "About" sub-page).
     _SettingsEntry(
       section: SettingsSection.about,
       icon: Icons.info_outline_rounded,
@@ -1262,7 +1262,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: 'v$kAppVersion',
       keywords:
           'about version app info license developers credits team '
-          'contributors social discord telegram how it works guide '
+          'social discord telegram how it works guide '
           'check updates upgrade latest beta prerelease support donate coffee',
       onTap: () => _push(const AboutSettingsScreen()),
     ),

@@ -576,9 +576,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get contributors => '贡献者';
-
-  @override
   String get website => '网站';
 
   @override
@@ -616,9 +613,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get buyMeACoffee => '请我喝杯咖啡';
-
-  @override
-  String get leadDeveloper => '首席开发者';
 
   @override
   String get addCloudStreamRepository => '添加 CloudStream 仓库';
@@ -1004,9 +998,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonQuestions => '常见问题';
-
-  @override
-  String get noCommunityContributorsYet => '还没有社区贡献者。';
 
   @override
   String get paged => '分页';
@@ -3488,9 +3479,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get team => '团队';
 
   @override
-  String get communityContributors => '社区贡献者';
-
-  @override
   String get accentColour => '强调色';
 
   @override
@@ -5773,9 +5761,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get contributors => '貢獻者';
-
-  @override
   String get website => '網站';
 
   @override
@@ -5813,9 +5798,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get buyMeACoffee => '請我喝杯咖啡';
-
-  @override
-  String get leadDeveloper => '主要開發者';
 
   @override
   String get addCloudStreamRepository => '新增 CloudStream 儲庫';
@@ -6201,9 +6183,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get commonQuestions => '常見問題';
-
-  @override
-  String get noCommunityContributorsYet => '還沒有社群貢獻者。';
 
   @override
   String get paged => '分頁';
@@ -8535,9 +8514,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get team => '團隊';
-
-  @override
-  String get communityContributors => '社區貢獻者';
 
   @override
   String get accentColour => '強調色';
