@@ -2,10 +2,10 @@ name: Contributors
 
 # Regenerates the roster in CONTRIBUTORS.md from git history.
 #
-# The point is that the list is never hand-maintained: a name is present because
-# the person committed code, so it cannot go stale or be forgotten. Runs weekly
-# and on demand; only opens a pull request when the generated block actually
-# differs from what is committed.
+# The point is that the list is never hand-maintained: it is derived from the
+# commit graph and lists the maintainer only. Runs weekly and on demand; only
+# opens a pull request when the generated block actually differs from what is
+# committed.
 on:
   schedule:
     # Sunday 04:17 UTC. An off-the-hour minute avoids the rush at :00.
@@ -69,9 +69,9 @@ jobs:
           body: |
             Regenerated from `git shortlog` by the Contributors workflow.
 
-            No hand-editing needed - if your name is missing, it is because your
-            commits are not attributed to an email linked to a GitHub account.
-            Fix that on your GitHub profile, then re-run this workflow.
+            The roster lists the maintainer only. Upstream Zangetsu authorship is
+            credited in `NOTICE.md` and stays visible in the commit graph; no
+            hand-editing is needed.
           delete-branch: true
           labels: automation
 
