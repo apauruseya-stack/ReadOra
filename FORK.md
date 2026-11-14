@@ -1,8 +1,8 @@
-# How Inkbound differs from Zangetsu
+# How ReadOra differs from Zangetsu
 
-Inkbound is a novel-only fork of [Zangetsu](https://github.com/Spyou/Zangetsu). The reader, source system, downloads, trackers and read-aloud engine are Krishna Vishwakarma's work, carried over intact. This page lists what this fork changes and where to look in the tree.
+ReadOra is a novel-only fork of [Zangetsu](https://github.com/Spyou/Zangetsu). The reader, source system, downloads, trackers and read-aloud engine are Krishna Vishwakarma's work, carried over intact. This page lists what this fork changes and where to look in the tree.
 
-| | Zangetsu | Inkbound |
+| | Zangetsu | ReadOra |
 |---|---|---|
 | Media | Anime · Manga · Novels | Novels only |
 | Account | Sign-in, cloud sync, Watch Together | None |

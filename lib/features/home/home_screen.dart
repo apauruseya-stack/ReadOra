@@ -126,7 +126,7 @@ class _HomeViewState extends State<_HomeView>
   bool _resumePrewarmed = false;
 
   // ── Logo-strike mode transition ──────────────────────────────────────────
-  // Tapping a mode card runs a full-screen overlay: the Inkbound mark springs
+  // Tapping a mode card runs a full-screen overlay: the ReadOra mark springs
   // in at centre behind a scrim, a red glow pulses and a white glint sweeps
   // across it, the mode swaps hidden at that peak, then it reveals. Self-contained —
   // see [_enterMode] / [_slashOverlay].

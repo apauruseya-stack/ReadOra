@@ -44,7 +44,7 @@
          wore a crescent, then a cat, and is now the plain book. See
          AppIconService.defaultId and tool/gen_brand_assets.py's SLOTS. -->
     <application
-        android:label="Inkbound"
+        android:label="ReadOra"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher_plain"
         android:banner="@drawable/tv_banner"
@@ -147,9 +147,9 @@
                 <data android:scheme="zangetsu" android:host="pair"/>
             </intent-filter>
             <!-- "Open with" for local video files, so a file manager / Downloads
-                 offers Inkbound the way it offers any other player.
+                 offers ReadOra the way it offers any other player.
 
-                 Deliberately NOT http/https: claiming those would put Inkbound
+                 Deliberately NOT http/https: claiming those would put ReadOra
                  in the chooser for every video link on the web, which is the
                  fast way to make the app feel like spyware. file:// and
                  content:// only — something the user already has on the device.
@@ -158,7 +158,7 @@
                  purpose: within one filter Android ORs the schemes with the
                  mime types, so merging them would also claim zangetsu://*
                  video/* and, worse, every file:// host for the tracker hosts. -->
-            <intent-filter android:label="Inkbound">
+            <intent-filter android:label="ReadOra">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
@@ -193,7 +193,7 @@
             android:exported="true"
             android:enabled="true"
             android:icon="@mipmap/ic_launcher_plain"
-            android:label="Inkbound">
+            android:label="ReadOra">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -205,7 +205,7 @@
             android:exported="true"
             android:enabled="false"
             android:icon="@mipmap/ic_launcher_cat"
-            android:label="Inkbound">
+            android:label="ReadOra">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

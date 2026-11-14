@@ -16,7 +16,7 @@ Two things this has to get right:
   under another is not listed twice as different people.
 * **Upstream versus here.** This is a fork, so most commits belong to the
   upstream project's authors. They are counted and credited, and labelled, so
-  the roster cannot be misread as "these people work on Inkbound".
+  the roster cannot be misread as "these people work on ReadOra".
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ START = "<!-- ROSTER:START -->"
 END = "<!-- ROSTER:END -->"
 
 # People whose commits belong to a project this repository forked, rather than
-# to Inkbound. Keys are the normalised names matched against git identities.
+# to ReadOra. Keys are the normalised names matched against git identities.
 UPSTREAM = {
     "krishna": "Krishna Vishwakarma",
     "nathen": "Nathen Brewer",
@@ -52,7 +52,7 @@ EM_DASH = "\u2014"
 # block and makes the workflow open a pull request on every run. An ASCII escape
 # decodes identically under any encoding.
 ROLES = {
-    "apauruseya7866er": f"**Maintainer {EM_DASH} Inkbound's author and sole owner**",
+    "apauruseya7866er": f"**Maintainer {EM_DASH} ReadOra's author and sole owner**",
     "krishna": (
         f"Original Zangetsu author {EM_DASH} reader, sources, downloads, "
         "trackers, TTS"
@@ -135,7 +135,7 @@ def render(totals: dict[tuple[str, str | None], int]) -> str:
         "",
         "Commit counts are total contributions across the full forked history, including",
         "the upstream years. Upstream contributions are credited to their authors and are",
-        "not an endorsement of Inkbound; see [`NOTICE.md`](NOTICE.md).",
+        "not an endorsement of ReadOra; see [`NOTICE.md`](NOTICE.md).",
     ]
     return "\n".join(lines)
 

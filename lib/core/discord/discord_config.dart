@@ -20,7 +20,7 @@ class DiscordConfig {
   static const String appLogoUrl =
       'https://cdn.jsdelivr.net/gh/apauruseya7866er/Inkbound@main/assets/icon/app_icon.png';
 
-  static const String appName = 'Inkbound';
+  static const String appName = 'ReadOra';
 
   /// Discord API base (v10).
   static const String api = 'https://discord.com/api/v10';

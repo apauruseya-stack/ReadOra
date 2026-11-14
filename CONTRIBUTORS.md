@@ -9,7 +9,7 @@
   remembered to add them.
 -->
 
-Inkbound is maintained by **[apauruseya7866er](https://github.com/apauruseya7866er)**
+ReadOra is maintained by **[apauruseya7866er](https://github.com/apauruseya7866er)**
 as a personal project. Contributions are welcome; ownership is not transferable.
 
 ## How attribution works here
@@ -51,7 +51,7 @@ Regenerated automatically; identities sharing a name are merged.
 |---|---:|---|
 | Krishna Vishwakarma | 2084 | Original Zangetsu author — reader, sources, downloads, trackers, TTS |
 | Nathen Brewer | 172 | Upstream (Zangetsu) |
-| apauruseya7866er | **40** | **Maintainer — Inkbound's author and sole owner** |
+| apauruseya7866er | **40** | **Maintainer — ReadOra's author and sole owner** |
 | mo7AmMeD64 | 10 | Upstream (Zangetsu) |
 | Debjit | 9 | Upstream (Zangetsu) |
 | Leo Camus | 7 | Upstream (Zangetsu) |
@@ -59,7 +59,7 @@ Regenerated automatically; identities sharing a name are merged.
 
 Commit counts are total contributions across the full forked history, including
 the upstream years. Upstream contributions are credited to their authors and are
-not an endorsement of Inkbound; see [`NOTICE.md`](NOTICE.md).
+not an endorsement of ReadOra; see [`NOTICE.md`](NOTICE.md).
 <!-- ROSTER:END -->
 
 ## Licensing and AI-assisted work

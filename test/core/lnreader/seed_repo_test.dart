@@ -103,7 +103,7 @@ void main() {
       expect(box.values, contains(LnReaderSeedRepo.indexUrl));
     });
 
-    test('seeds Inkbound\'s own plugin repo, not upstream\'s', () async {
+    test('seeds ReadOra\'s own plugin repo, not upstream\'s', () async {
       expect(LnReaderSeedRepo.indexUrl, contains('apauruseya7866er/plugins'));
       expect(LnReaderSeedRepo.indexUrl, isNot(contains('LNReader/')));
     });

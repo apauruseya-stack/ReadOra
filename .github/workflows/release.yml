@@ -133,14 +133,14 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           cp build/app/outputs/flutter-apk/app-release.apk \
-             "build/app/outputs/flutter-apk/Inkbound-${TAG}.apk"
+             "build/app/outputs/flutter-apk/ReadOra-${TAG}.apk"
           ls -l build/app/outputs/flutter-apk/
 
       - name: Publish as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Inkbound-${{ github.ref_name }}
-          path: build/app/outputs/flutter-apk/Inkbound-${{ github.ref_name }}.apk
+          name: ReadOra-${{ github.ref_name }}
+          path: build/app/outputs/flutter-apk/ReadOra-${{ github.ref_name }}.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -188,16 +188,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          APK="build/app/outputs/flutter-apk/Inkbound-${TAG}.apk"
+          APK="build/app/outputs/flutter-apk/ReadOra-${TAG}.apk"
           if gh release view "${TAG}" > /dev/null 2>&1; then
             echo "Release ${TAG} already exists - uploading to it."
             gh release upload "${TAG}" "${APK}" --clobber
           elif [ -n "${NOTES_FILE:-}" ]; then
             gh release create "${TAG}" "${APK}" \
-              --title "Inkbound ${TAG}" \
+              --title "ReadOra ${TAG}" \
               --notes-file "${NOTES_FILE}"
           else
             gh release create "${TAG}" "${APK}" \
-              --title "Inkbound ${TAG}" \
+              --title "ReadOra ${TAG}" \
               --generate-notes
           fi

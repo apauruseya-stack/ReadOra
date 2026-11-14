@@ -1,4 +1,4 @@
-# Inkbound
+# ReadOra
 
 Novels only. Local only. Yours.
 
@@ -50,7 +50,7 @@ Everything the reader shows and speaks comes from one segmented version of the c
 
 ## 🧹 Text cleanup
 
-Real sources ship with junk. Inkbound strips it out so the reader never reads it aloud:
+Real sources ship with junk. ReadOra strips it out so the reader never reads it aloud:
 
 - **Built-in rules** remove donation pitches, sleep-timer ads, and "read more" links — not just from the page, but from narration too
 - **Long-press to hide** any sentence — the rule is global, so a repeated footer disappears from every chapter
@@ -80,7 +80,7 @@ You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) (Dart 3
 
 ```bash
 git clone https://github.com/apauruseya7866er/Inkbound.git
-cd Inkbound
+cd ReadOra
 flutter pub get
 flutter run                  # debug build on a connected device
 flutter build apk --release  # build/app/outputs/flutter-apk/app-release.apk
@@ -96,6 +96,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for CI, tests, and how to open a pull req
 
 ## 📜 License
 
-[GNU GPL-3.0](LICENSE). Copyright © 2026 Inkbound contributors.
+[GNU GPL-3.0](LICENSE). Copyright © 2026 ReadOra contributors.
 
 </div>

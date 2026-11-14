@@ -4,7 +4,7 @@ import 'package:hive/hive.dart';
 import '../hive/safe_box.dart';
 import 'lnreader_extension_service.dart';
 
-/// Seeds Inkbound's LNReader plugin repository, so a fresh install has novel
+/// Seeds ReadOra's LNReader plugin repository, so a fresh install has novel
 /// sources without the user pasting a repo URL.
 ///
 /// This is our own fork of the LNReader plugin ecosystem, not upstream's index.

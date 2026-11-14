@@ -48,7 +48,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Choose folder…'), findsOneWidget);
-    expect(find.text('Downloads › Inkbound'), findsOneWidget);
+    expect(find.text('Downloads › ReadOra'), findsOneWidget);
   });
 
   group('folderLabelFromUri', () {

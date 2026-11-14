@@ -38,7 +38,7 @@ enum SourceEcosystem {
   mihon,
   lnReader,
 
-  /// A JS provider from an Inkbound/Zangetsu repo. The unmarked default: these
+  /// A JS provider from a ReadOra/Zangetsu repo. The unmarked default: these
   /// ids carry no prefix.
   jsProvider,
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Inkbound's brand artwork for every platform target.
+"""Generate ReadOra's brand artwork for every platform target.
 
 The app icon used to be three different things in three different places: the
 in-app mark was an open book, the iOS and tvOS icons were still the upstream
@@ -11,7 +11,9 @@ again.
 Two marks ship, matching the two slots in the in-app icon picker
 (Settings -> Interface):
 
-  plain  the brand mark — an open book with the bookmark ribbon in its gutter.
+  plain  the brand mark — an open book with the bookmark ribbon in its gutter,
+         under a coral ring: the "O" of ReadOra, doubling as the aura the name
+         promises and as a sun coming up over the pages.
          This is what a fresh install shows and what the splash, the About
          screen, the TV banner and every Apple asset wear.
   cat    the alternate — the same book and ribbon with a cat reading it, for
@@ -225,17 +227,39 @@ def cat_head(d, u, cx, top, w, h, eyes=True):
             )
 
 
+def aura(d, u, cy=0.222, r=0.096, w=0.046):
+    """The coral ring above the book: ReadOra's "O", and its aura.
+
+    Struck as a ring rather than a filled disc on purpose. A disc this size
+    merges with the ribbon below it into one red lollipop at 20px, which looks
+    like a pin rather than a book; the hole keeps the ring reading as a letter
+    and gives the mark a horizon instead of a lid. It carries the name's "Ora"
+    (light, aura) and, sitting on the spine, also reads as a sun clearing the
+    pages — the dawn-light motif the accent colour was already doing.
+    """
+    cx = u(0.5)
+    cy, rr = u(cy), u(r)
+    d.ellipse(
+        [cx - rr, cy - rr, cx + rr, cy + rr],
+        outline=ACCENT,
+        width=max(1, int(u(w))),
+    )
+
+
 def art_cat(d, u):
-    """Icon slot 1 — a cat reading, ribbon in the gutter."""
+    """Icon slot 1 — a cat reading, ribbon in the gutter. Unchanged by the
+    rename: the alternate never carried the old wordmark, and the cat's head
+    already fills the space the ring occupies on the primary mark."""
     cat_head(d, u, 0.5, 0.222, 0.248, 0.220)
     book_pages(d, u, inset=0.012, drop=0.096)
     ribbon(d, u, top=0.478, tip=0.800)
 
 
 def art_plain(d, u):
-    """Icon slot 2 — the same book and ribbon, no cat."""
-    book_pages(d, u)
-    ribbon(d, u)
+    """Icon slot 2 — the book and ribbon under the ring."""
+    aura(d, u)
+    book_pages(d, u, drop=0.052)
+    ribbon(d, u, top=0.398, tip=0.798)
 
 
 MARKS = {"cat": art_cat, "plain": art_plain}
@@ -352,7 +376,7 @@ def adaptive_layers(mark, size):
 
 
 # ── wordmark ────────────────────────────────────────────────────────────────
-WORDMARK_TEXT = "INKBOUND"
+WORDMARK_TEXT = "READORA"
 TRACKING = 0.30  # extra space between glyphs, in ems
 
 
@@ -405,7 +429,7 @@ def _wordmark_font(size, weight=400):
 
 
 def wordmark(width, height, colour=CREAM, pad=0.04, weight=400):
-    """INKBOUND, letterspaced, on transparency.
+    """READORA, letterspaced, on transparency.
 
     Sized to fit `width` x `height` rather than cropped to the ink, so every
     caller gets the same optical size regardless of the box it asked for.

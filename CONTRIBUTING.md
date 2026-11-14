@@ -1,4 +1,4 @@
-# Contributing to Inkbound
+# Contributing to ReadOra
 
 Thanks for helping out. Contribution terms are in [CLA.md](CLA.md), and the AI usage policy applies to this codebase.
 

@@ -760,7 +760,7 @@ abstract class AppLocalizations {
   /// No description provided for @logsShareSubject.
   ///
   /// In en, this message translates to:
-  /// **'Inkbound logs'**
+  /// **'ReadOra logs'**
   String get logsShareSubject;
 
   /// No description provided for @signInSubtitle.
@@ -1792,7 +1792,7 @@ abstract class AppLocalizations {
   /// No description provided for @bootErrorTitle.
   ///
   /// In en, this message translates to:
-  /// **'Inkbound didn\'t finish starting'**
+  /// **'ReadOra didn\'t finish starting'**
   String get bootErrorTitle;
 
   /// No description provided for @bootErrorBody.
@@ -1816,13 +1816,13 @@ abstract class AppLocalizations {
   /// No description provided for @resetAppDataBody.
   ///
   /// In en, this message translates to:
-  /// **'This clears what Inkbound has saved on this device so it can start fresh.\n\nYour account and anything synced to the cloud are not touched — sign in again and your library comes back.'**
+  /// **'This clears what ReadOra has saved on this device so it can start fresh.\n\nYour account and anything synced to the cloud are not touched — sign in again and your library comes back.'**
   String get resetAppDataBody;
 
   /// No description provided for @resetAppDataDone.
   ///
   /// In en, this message translates to:
-  /// **'Close Inkbound completely and open it again.'**
+  /// **'Close ReadOra completely and open it again.'**
   String get resetAppDataDone;
 
   /// No description provided for @detailsCopied.
@@ -2764,7 +2764,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadsZangetsu.
   ///
   /// In en, this message translates to:
-  /// **'Downloads › Inkbound'**
+  /// **'Downloads › ReadOra'**
   String get downloadsZangetsu;
 
   /// No description provided for @removableDrive.
@@ -4043,7 +4043,7 @@ abstract class AppLocalizations {
   /// No description provided for @openZangetsuOnYourNphoneAndScan.
   ///
   /// In en, this message translates to:
-  /// **'Open Inkbound on your\\nphone and scan'**
+  /// **'Open ReadOra on your\\nphone and scan'**
   String get openZangetsuOnYourNphoneAndScan;
 
   /// No description provided for @noApp.
@@ -4157,7 +4157,7 @@ abstract class AppLocalizations {
   /// No description provided for @onTheZangetsuAppOnYourPhoneOpenNPairATVAndEnterThisCodeOrScanTheQR.
   ///
   /// In en, this message translates to:
-  /// **'On the Inkbound app on your phone, open\\n\"Pair a TV\" and enter this code — or scan the QR.'**
+  /// **'On the ReadOra app on your phone, open\\n\"Pair a TV\" and enter this code — or scan the QR.'**
   String get onTheZangetsuAppOnYourPhoneOpenNPairATVAndEnterThisCodeOrScanTheQR;
 
   /// No description provided for @signingIn.
@@ -4205,7 +4205,7 @@ abstract class AppLocalizations {
   /// No description provided for @openZangetsuOnYourTVAndSignInWithYourPhoneToSeeIt.
   ///
   /// In en, this message translates to:
-  /// **'Open Inkbound on your TV and sign in with your phone to see it.'**
+  /// **'Open ReadOra on your TV and sign in with your phone to see it.'**
   String get openZangetsuOnYourTVAndSignInWithYourPhoneToSeeIt;
 
   /// No description provided for @abcd2345.
@@ -4283,7 +4283,7 @@ abstract class AppLocalizations {
   /// No description provided for @reopenZangetsuToSeeRestoredLibrarySources.
   ///
   /// In en, this message translates to:
-  /// **'Reopen Inkbound to see restored library & sources.'**
+  /// **'Reopen ReadOra to see restored library & sources.'**
   String get reopenZangetsuToSeeRestoredLibrarySources;
 
   /// No description provided for @saveToAFile.
@@ -4703,7 +4703,7 @@ abstract class AppLocalizations {
   /// No description provided for @zangetsuProviders.
   ///
   /// In en, this message translates to:
-  /// **'Inkbound providers'**
+  /// **'ReadOra providers'**
   String get zangetsuProviders;
 
   /// No description provided for @addRepo.
@@ -4961,7 +4961,7 @@ abstract class AppLocalizations {
   /// No description provided for @addZangetsuRepo.
   ///
   /// In en, this message translates to:
-  /// **'Add Inkbound repo'**
+  /// **'Add ReadOra repo'**
   String get addZangetsuRepo;
 
   /// No description provided for @theProviderWillBeRemovedFromYourInstalledSources.
@@ -6785,7 +6785,7 @@ abstract class AppLocalizations {
   /// No description provided for @appIconBlurb.
   ///
   /// In en, this message translates to:
-  /// **'The icon on your home screen. Inkbound closes when you change it — Android has to swap the launcher entry.'**
+  /// **'The icon on your home screen. ReadOra closes when you change it — Android has to swap the launcher entry.'**
   String get appIconBlurb;
 
   /// No description provided for @useTheIcon.
@@ -6797,7 +6797,7 @@ abstract class AppLocalizations {
   /// No description provided for @useTheIconBody.
   ///
   /// In en, this message translates to:
-  /// **'Inkbound will close so Android can apply the new icon. Open it again from your home screen afterwards.\n\nIf you have Inkbound in a folder or dock, you may need to add it again.'**
+  /// **'ReadOra will close so Android can apply the new icon. Open it again from your home screen afterwards.\n\nIf you have ReadOra in a folder or dock, you may need to add it again.'**
   String get useTheIconBody;
 
   /// No description provided for @animRise.
@@ -6929,7 +6929,7 @@ abstract class AppLocalizations {
   /// No description provided for @savedToDownloadsZangetsu.
   ///
   /// In en, this message translates to:
-  /// **'Saved to Downloads › Inkbound'**
+  /// **'Saved to Downloads › ReadOra'**
   String get savedToDownloadsZangetsu;
 
   /// No description provided for @restoreFailed.
@@ -6947,7 +6947,7 @@ abstract class AppLocalizations {
   /// No description provided for @backupScreenBlurb.
   ///
   /// In en, this message translates to:
-  /// **'Save your sources, list and settings — to a file on your device or to your Inkbound account. Restoring only adds things back; it never deletes what you already have.'**
+  /// **'Save your sources, list and settings — to a file on your device or to your ReadOra account. Restoring only adds things back; it never deletes what you already have.'**
   String get backupScreenBlurb;
 
   /// No description provided for @includeInTheBackup.
@@ -7049,7 +7049,7 @@ abstract class AppLocalizations {
   /// No description provided for @couldnTOpenInstaller.
   ///
   /// In en, this message translates to:
-  /// **'Couldn\'t open the installer. Enable \"Install unknown apps\" for Inkbound in system settings, then try again.'**
+  /// **'Couldn\'t open the installer. Enable \"Install unknown apps\" for ReadOra in system settings, then try again.'**
   String get couldnTOpenInstaller;
 
   /// No description provided for @downloadFailedCheckConnection.
@@ -7307,7 +7307,7 @@ abstract class AppLocalizations {
   /// No description provided for @zangetsu.
   ///
   /// In en, this message translates to:
-  /// **'Inkbound'**
+  /// **'ReadOra'**
   String get zangetsu;
 
   /// No description provided for @cloudStream.

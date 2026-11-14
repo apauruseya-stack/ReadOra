@@ -344,7 +344,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get couldNotExportLogs => 'Logs konnten nicht exportiert werden';
 
   @override
-  String get logsShareSubject => 'Inkbound-Logs';
+  String get logsShareSubject => 'ReadOra-Logs';
 
   @override
   String get signInSubtitle => 'Liste, Verlauf & Weiterschauen synchronisieren';
@@ -934,7 +934,7 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get bootErrorTitle => 'Inkbound ist nicht fertig gestartet';
+  String get bootErrorTitle => 'ReadOra ist nicht fertig gestartet';
 
   @override
   String get bootErrorBody =>
@@ -948,11 +948,11 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get resetAppDataBody =>
-      'Das löscht, was Inkbound auf diesem Gerät gespeichert hat, damit es neu starten kann.\n\nDein Konto und alles in der Cloud bleiben unberührt — meld dich wieder an und deine Bibliothek ist da.';
+      'Das löscht, was ReadOra auf diesem Gerät gespeichert hat, damit es neu starten kann.\n\nDein Konto und alles in der Cloud bleiben unberührt — meld dich wieder an und deine Bibliothek ist da.';
 
   @override
   String get resetAppDataDone =>
-      'Schließe Inkbound komplett und öffne es erneut.';
+      'Schließe ReadOra komplett und öffne es erneut.';
 
   @override
   String get detailsCopied => 'Details kopiert — schick sie uns';
@@ -1458,7 +1458,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Material You aus, um selbst eine Farbe zu wählen';
 
   @override
-  String get downloadsZangetsu => 'Downloads › Inkbound';
+  String get downloadsZangetsu => 'Downloads › ReadOra';
 
   @override
   String get removableDrive => 'Wechseldatenträger';
@@ -2124,7 +2124,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get openZangetsuOnYourNphoneAndScan =>
-      'Öffne Inkbound auf deinem\\nHandy und scanne';
+      'Öffne ReadOra auf deinem\\nHandy und scanne';
 
   @override
   String get noApp => 'Keine App?';
@@ -2183,7 +2183,7 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String
   get onTheZangetsuAppOnYourPhoneOpenNPairATVAndEnterThisCodeOrScanTheQR =>
-      'In der Inkbound-App auf dem Handy öffne\\n„TV koppeln“ und gib diesen Code ein — oder scanne den QR.';
+      'In der ReadOra-App auf dem Handy öffne\\n„TV koppeln“ und gib diesen Code ein — oder scanne den QR.';
 
   @override
   String get signingIn => 'Anmeldung…';
@@ -2209,7 +2209,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get openZangetsuOnYourTVAndSignInWithYourPhoneToSeeIt =>
-      'Öffne Inkbound auf der TV und melde dich mit dem Handy an, um es zu sehen.';
+      'Öffne ReadOra auf der TV und melde dich mit dem Handy an, um es zu sehen.';
 
   @override
   String get abcd2345 => 'ABCD 2345';
@@ -2255,7 +2255,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get reopenZangetsuToSeeRestoredLibrarySources =>
-      'Inkbound erneut öffnen, um Bibliothek & Quellen zu sehen.';
+      'ReadOra erneut öffnen, um Bibliothek & Quellen zu sehen.';
 
   @override
   String get saveToAFile => 'In Datei speichern';
@@ -2477,7 +2477,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get noSourcesInThisRepo => 'Keine Quellen in diesem Repo.';
 
   @override
-  String get zangetsuProviders => 'Inkbound-Anbieter';
+  String get zangetsuProviders => 'ReadOra-Anbieter';
 
   @override
   String get addRepo => 'Repo hinzufügen';
@@ -2631,7 +2631,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Eigene Einstellungen dieser Quelle öffnen (z. B. Server, Sprache)';
 
   @override
-  String get addZangetsuRepo => 'Inkbound-Repo hinzufügen';
+  String get addZangetsuRepo => 'ReadOra-Repo hinzufügen';
 
   @override
   String get theProviderWillBeRemovedFromYourInstalledSources =>
@@ -3793,7 +3793,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get appIconBlurb =>
-      'Das Symbol auf Ihrem Startbildschirm. Inkbound wird geschlossen, wenn Sie es ändern – Android muss den Launcher-Eintrag austauschen.';
+      'Das Symbol auf Ihrem Startbildschirm. ReadOra wird geschlossen, wenn Sie es ändern – Android muss den Launcher-Eintrag austauschen.';
 
   @override
   String useTheIcon(String label) {
@@ -3802,7 +3802,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get useTheIconBody =>
-      'Inkbound wird geschlossen, damit Android das neue Symbol anwenden kann. Öffnen Sie es anschließend wieder von Ihrem Startbildschirm aus.\n\nFalls sich Inkbound in einem Ordner oder im Dock befindet, müssen Sie es möglicherweise erneut hinzufügen.';
+      'ReadOra wird geschlossen, damit Android das neue Symbol anwenden kann. Öffnen Sie es anschließend wieder von Ihrem Startbildschirm aus.\n\nFalls sich ReadOra in einem Ordner oder im Dock befindet, müssen Sie es möglicherweise erneut hinzufügen.';
 
   @override
   String get animRise => 'Erheben';
@@ -3884,7 +3884,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get savedToDownloadsZangetsu =>
-      'Unter Downloads gespeichert › Inkbound';
+      'Unter Downloads gespeichert › ReadOra';
 
   @override
   String restoreFailed(String error) {
@@ -3897,7 +3897,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get backupScreenBlurb =>
-      'Speichern Sie Ihre Quellen, Listen und Einstellungen – entweder in einer Datei auf Ihrem Gerät oder in Ihrem Inkbound-Konto. Durch das Wiederherstellen werden lediglich die gespeicherten Daten wiederhergestellt; bereits vorhandene Daten werden niemals gelöscht.';
+      'Speichern Sie Ihre Quellen, Listen und Einstellungen – entweder in einer Datei auf Ihrem Gerät oder in Ihrem ReadOra-Konto. Durch das Wiederherstellen werden lediglich die gespeicherten Daten wiederhergestellt; bereits vorhandene Daten werden niemals gelöscht.';
 
   @override
   String get includeInTheBackup => 'In die Sicherung aufnehmen';
@@ -3960,7 +3960,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get couldnTOpenInstaller =>
-      'Das Installationsprogramm konnte nicht geöffnet werden. Aktivieren Sie in den Systemeinstellungen die Option „Unbekannte Apps installieren“ für Inkbound und versuchen Sie es dann erneut.';
+      'Das Installationsprogramm konnte nicht geöffnet werden. Aktivieren Sie in den Systemeinstellungen die Option „Unbekannte Apps installieren“ für ReadOra und versuchen Sie es dann erneut.';
 
   @override
   String get downloadFailedCheckConnection =>
@@ -4125,7 +4125,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get lnreader => 'LNReader';
 
   @override
-  String get zangetsu => 'Inkbound';
+  String get zangetsu => 'ReadOra';
 
   @override
   String get cloudStream => 'Cloudstream';
