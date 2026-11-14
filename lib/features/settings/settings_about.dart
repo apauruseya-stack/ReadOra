@@ -16,7 +16,7 @@ class AboutSettingsScreen extends StatefulWidget {
 class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
   // No website: this fork has no landing page of its own, and the upstream
   // site is not this app's. No Telegram/Discord either — see kDiscordInviteUrl.
-  static const String _githubUrl = 'https://github.com/apauruseya7866er/Inkbound';
+  static const String _githubUrl = 'https://github.com/apauruseya-stack/ReadOra';
 
   final UpdateService _updateService = UpdateService();
   bool _betaUpdates = false;

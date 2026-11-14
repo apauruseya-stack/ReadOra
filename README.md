@@ -4,11 +4,11 @@ Novels only. Local only. Yours.
 
 Read novels from your own sources. No account. No cloud. Your library, history and progress stay on your device.
 
-[![Latest release](https://img.shields.io/github/v/release/apauruseya7866er/Inkbound?display_name=tag&style=for-the-badge&color=FF4D57)](https://github.com/apauruseya7866er/Inkbound/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/apauruseya-stack/ReadOra?display_name=tag&style=for-the-badge&color=FF4D57)](https://github.com/apauruseya-stack/ReadOra/releases/latest)
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-FF4D57?style=for-the-badge)](LICENSE)
 
-### [Download the latest APK](https://github.com/apauruseya7866er/Inkbound/releases/latest)
+### [Download the latest APK](https://github.com/apauruseya-stack/ReadOra/releases/latest)
 
 Android 7.0 (API 24)+ · 75.5 MB · arm64-v8a / armeabi-v7a
 
@@ -60,7 +60,7 @@ Real sources ship with junk. ReadOra strips it out so the reader never reads it 
 
 ## 📦 Install
 
-1. Download the APK from the [releases page](https://github.com/apauruseya7866er/Inkbound/releases/latest)
+1. Download the APK from the [releases page](https://github.com/apauruseya-stack/ReadOra/releases/latest)
 2. Open it on your phone and allow install from your browser if Android asks
 3. On first launch, the app seeds a source index so you have a catalogue immediately
 
@@ -79,7 +79,7 @@ Real sources ship with junk. ReadOra strips it out so the reader never reads it 
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) (Dart 3.x) and an Android toolchain.
 
 ```bash
-git clone https://github.com/apauruseya7866er/Inkbound.git
+git clone https://github.com/apauruseya-stack/ReadOra.git
 cd ReadOra
 flutter pub get
 flutter run                  # debug build on a connected device

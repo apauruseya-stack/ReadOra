@@ -31,7 +31,7 @@ class SubtitleFontService {
   /// tree. Left on the upstream URL it kept working only for as long as that
   /// branch stayed put — and any font added here would never be found.
   static const String _base =
-      'https://raw.githubusercontent.com/apauruseya7866er/Inkbound/main/assets/fonts/';
+      'https://raw.githubusercontent.com/apauruseya-stack/ReadOra/main/assets/fonts/';
 
   final Dio _dio = Dio(
     BaseOptions(

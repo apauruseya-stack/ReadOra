@@ -48,7 +48,7 @@ class UpdateService {
   /// upstream project made "check for updates" offer to download and install
   /// the upstream author's APK — a different app, and one whose signature
   /// cannot match this one anyway.
-  static const String _repo = 'apauruseya7866er/Inkbound';
+  static const String _repo = 'apauruseya-stack/ReadOra';
   static const String _latestUrl =
       'https://api.github.com/repos/$_repo/releases/latest';
   static const String _releasesUrl =
