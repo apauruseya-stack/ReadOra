@@ -1,0 +1,107 @@
+# Static analysis and tests.
+#
+# Runs on every push and pull request. Two jobs, matching the two things that
+# have actually caught regressions in this repository: the analyzer (silent
+# correctness bugs like a stale `@override` falling through to noSuchMethod) and
+# the test suite.
+#
+# The analyze step passes `--no-fatal-infos` deliberately. Errors and warnings
+# are fatal and both are currently at zero, so this is a real gate rather than a
+# rubber stamp — but the 146 remaining infos are mechanical style, and failing
+# on them would mean a large reformat that conflicts with `upstream` on every
+# sync. See analysis_options.yaml for how to promote infos later.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the previous run for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    # A hard gate, and deliberately so. This used to be `continue-on-error: true`
+    # because roughly thirty tests could only ever fail here: they execute real
+    # plugin JavaScript through flutter_js, which on Android is QuickJS compiled
+    # to a native library, and that library has no host build - so the runner
+    # reports `Failed to load dynamic library 'quickjs_c_bridge'` every time.
+    #
+    # A permanently red job is worse than no gate at all: it cannot catch a
+    # regression in the other three thousand tests either, and it teaches people
+    # to ignore the badge. Those thirty are now tagged `needs-device` and skipped
+    # by `dart_test.yaml`, so this job means something again, and the engine is
+    # covered for real on a device by integration_test/js_runtime_test.dart.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Test
+        # Prints the real pass/fail line, so a soft-failed job still says how
+        # many tests passed and how many failed rather than only "failed".
+        # `tee` keeps the exit status of flutter test rather than of tail.
+        run: |
+          set -o pipefail
+          flutter test --reporter expanded 2>&1 | tee test-output.log | tail -n 40
+
+      - name: Upload the full test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.log
+          retention-days: 14
+
+  build:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    needs: [analyze, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # Catches Android/Kotlin breakage that neither the analyzer nor the Dart
+      # test suite can see. The Cloudflare solver lives in Kotlin, so this is the
+      # only job that would have failed when its signature changed.
+      - name: Build
+        run: flutter build apk --release

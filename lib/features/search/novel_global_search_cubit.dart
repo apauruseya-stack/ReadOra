@@ -1,0 +1,454 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../core/di/injector.dart';
+import '../../core/mode/content_mode.dart';
+import '../../core/models/media_item.dart';
+import '../../core/playback/pinned_sources.dart';
+import '../../core/playback/search_source_prefs.dart';
+import '../../core/playback/source_health_store.dart';
+import '../../core/repository/catalogue_repository.dart';
+import '../../core/repository/source_repository.dart';
+import '../../core/ui/source_switcher.dart';
+import '../../core/zmode/zmode_ids.dart';
+
+/// Where one source got to with a query.
+enum NovelSourceStatus { loading, hits, empty, failed }
+
+/// One source's row: its own state, its own results.
+///
+/// Results are per source and are never merged. Two sites carrying the same
+/// novel are two different books as far as this screen is concerned - they are
+/// read from different places, saved to different libraries, and a reader who
+/// wants one has no way of getting the other. Deduplicating on title would
+/// silently pick a winner for them.
+class NovelSourceGroup {
+  const NovelSourceGroup({
+    required this.sourceId,
+    required this.sourceName,
+    required this.status,
+    this.language,
+    this.items = const [],
+  });
+
+  final String sourceId;
+  final String sourceName;
+
+  /// Shown under the name, so a reader with several sources of the same name
+  /// can tell them apart without reading each one's catalogue.
+  final String? language;
+  final NovelSourceStatus status;
+  final List<MediaItem> items;
+
+  NovelSourceGroup copyWith({
+    NovelSourceStatus? status,
+    List<MediaItem>? items,
+  }) => NovelSourceGroup(
+    sourceId: sourceId,
+    sourceName: sourceName,
+    status: status ?? this.status,
+    language: language,
+    items: items ?? this.items,
+  );
+}
+
+/// Search every novel source at once, one row per source.
+///
+/// The general search screen answers "what can I find on the source I am
+/// looking at", and its scope follows whatever mode Home happens to be in. This
+/// answers the other question - "which of my sources has this book?" - so it
+/// pins the source set to novel and ignores the current mode entirely.
+///
+/// Deliberately its own model rather than a configured [SearchBloc]: that one
+/// fans out to every selected source at once, with no cap, which is fine when
+/// the set is "the active source plus a couple" and not fine when it is every
+/// novel source the user has ever installed.
+class NovelGlobalSearchCubit extends Cubit<NovelGlobalSearchState> {
+  /// `sourceLanguages` is a [SourceRepository] detail, not on
+  /// [CatalogueRepository] - putting it on the interface would force every
+  /// implementation, test doubles included, to grow a member they never use.
+  ///
+  /// Resolves against whichever repo this cubit actually got, so a test double
+  /// passed in by a caller yields no languages rather than a cast error.
+  static Map<String, String> _langsOf(CatalogueRepository? repo) {
+    final r = repo ?? sl<SourceRepository>();
+    return r is SourceRepository ? r.sourceLanguages : const <String, String>{};
+  }
+
+  NovelGlobalSearchCubit({
+    CatalogueRepository? repo,
+    SearchSourcePrefs? prefs,
+    Map<String, String>? languages,
+    bool Function(String id)? isPinned,
+    int maxConcurrent = defaultMaxConcurrent,
+    Duration debounce = defaultDebounce,
+  }) :
+       // SourceRepository, NOT `sl<CatalogueRepository>()`.
+       //
+       // The CatalogueRepository singleton is a CatalogueRouter, which with Z
+       // Mode on resolves `loadedSources` to the METADATA catalogue - a single
+       // `zm` pseudo-source (see CatalogueRouter._browse and
+       // MetadataRepository.loadedSources). This cubit excludes `zm` by id, so
+       // it was left with an empty list and reported "no novel sources are
+       // installed" while the reader had 150-odd of them sitting right there in
+       // the sources screen, which reads the LNReader manager directly.
+       //
+       // Same reasoning as SearchScreen's sources scope, which reaches for
+       // `sl<SourceRepository>()` for exactly this reason.
+       _repo = repo ?? sl<SourceRepository>(),
+       _prefs = prefs ?? sl<SearchSourcePrefs>(),
+       _languages = languages ?? _langsOf(repo),
+       _isPinned = isPinned ?? PinnedSources.isPinned,
+       _maxConcurrent = maxConcurrent,
+       _debounce = debounce,
+       super(const NovelGlobalSearchState());
+
+  /// Five at a time, the same cap Reikai uses. Beyond this the connections
+  /// queue behind each other and every source finishes later for no gain, while
+  /// a phone's radio is trying to hold them all open at once.
+  static const int defaultMaxConcurrent = 5;
+
+  /// Long enough not to fire on every keystroke, short enough that a title
+  /// feels typed rather than pasted.
+  static const Duration defaultDebounce = Duration(milliseconds: 450);
+
+  final CatalogueRepository _repo;
+  final SearchSourcePrefs _prefs;
+  final Map<String, String> _languages;
+  final bool Function(String id) _isPinned;
+  final int _maxConcurrent;
+  final Duration _debounce;
+
+  Timer? _debounceTimer;
+
+  /// Bumped by every search. A response from an older one is dropped rather
+  /// than applied, which is the whole reason this exists: a slow source
+  /// answering after the reader has already typed the next title would
+  /// otherwise repaint the screen with the previous query's results.
+  int _generation = 0;
+
+  void queryChanged(String raw) {
+    _debounceTimer?.cancel();
+    final query = raw.trim();
+    if (query.isEmpty) {
+      search(query);
+      return;
+    }
+    _debounceTimer = Timer(_debounce, () => search(query));
+  }
+
+  Future<void> search(String query) async {
+    _debounceTimer?.cancel();
+    final q = query.trim();
+    final generation = ++_generation;
+
+    if (q.isEmpty) {
+      emit(const NovelGlobalSearchState());
+      return;
+    }
+
+    final sources = _novelSources();
+    // "No sources" is a claim about what is INSTALLED and switched on, so it
+    // is decided on the unscoped set. An empty pinned subset is a different
+    // thing entirely - the reader has sources and has not pinned any - and
+    // reporting it as "none installed" would be a lie the screen repeats.
+    final installed = _switchedOnNovelSources();
+    emit(
+      state.copyWith(
+        query: q,
+        searching: true,
+        sourceCount: sources.length,
+        groups: [
+          for (final s in sources)
+            NovelSourceGroup(
+              sourceId: s.id,
+              sourceName: s.name,
+              language: s.lang,
+              status: NovelSourceStatus.loading,
+            ),
+        ],
+      ),
+    );
+
+    if (installed.isEmpty) {
+      final excluded = _excludedNovelSources();
+      // Logged because "nothing here" is otherwise indistinguishable from a
+      // bug: this names every source that was loaded and every one that was
+      // switched off, so "why is it empty" is answered by the log rather than
+      // guessed at.
+      debugPrint(
+        '[novel-search] "$q": no searchable novel source. '
+        'loaded=${_repo.loadedSources.map((s) => s.id).join(',')} '
+        'excluded=${excluded.map((s) => s.id).join(',')}',
+      );
+      emit(
+        state.copyWith(
+          searching: false,
+          noSources: true,
+          excludedCount: excluded.length,
+        ),
+      );
+      return;
+    }
+
+    if (sources.isEmpty) {
+      // Installed and switched on, but this scope covers none of them. The
+      // screen turns this into "nothing is pinned" with a way out, rather than
+      // an empty page that looks like a failed search.
+      emit(state.copyWith(searching: false));
+      return;
+    }
+
+    // A small worker pool rather than Future.wait over the whole set: the
+    // capped concurrency is the point.
+    var next = 0;
+    final workers = List.generate(
+      _maxConcurrent.clamp(1, sources.length),
+      (_) async {
+        while (true) {
+          final index = next++;
+          if (index >= sources.length) return;
+          final source = sources[index];
+          final outcome = await _run(source, q);
+          // A response for a superseded query is discarded, not applied.
+          if (generation != _generation) return;
+          _apply(source, outcome);
+        }
+      },
+    );
+    await Future.wait(workers);
+
+    if (generation != _generation || isClosed) return;
+    emit(state.copyWith(searching: false));
+  }
+
+  Future<({List<MediaItem> items, bool failed})> _run(
+    ({String id, String name, String? lang}) source,
+    String query,
+  ) async {
+    try {
+      final res = await _repo.searchStatus(
+        query,
+        sourceId: source.id,
+        cache: true,
+      );
+      final List<MediaItem> items = res.items;
+      // Anything short of a real answer. `error` alone was not enough: the
+      // repository reports a Cloudflare refusal as `blocked` and a dead site as
+      // `timeout`, and treating those as "found nothing" is the same lie -
+      // "no matches" and "could not reach" are different sentences.
+      final failed =
+          res.outcome != SourceOutcome.ok && res.outcome != SourceOutcome.empty;
+      return (items: items, failed: failed);
+    } catch (_) {
+      // The general search distinguishes error from timeout; here both mean the
+      // same thing to a reader - this source had nothing for us - and the row
+      // says which sources came back empty either way.
+      return (items: const <MediaItem>[], failed: true);
+    }
+  }
+
+  void _apply(
+    ({String id, String name, String? lang}) source,
+    ({List<MediaItem> items, bool failed}) outcome,
+  ) {
+    // A search can be in flight when the reader leaves the screen - switching
+    // scope launches one, so this is reachable, not theoretical. Emitting into
+    // a closed cubit throws.
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        groups: [
+          for (final g in state.groups)
+            if (g.sourceId == source.id)
+              g.copyWith(
+                status: outcome.failed
+                    ? NovelSourceStatus.failed
+                    : outcome.items.isEmpty
+                    ? NovelSourceStatus.empty
+                    : NovelSourceStatus.hits,
+                items: outcome.items,
+              )
+            else
+              g,
+        ],
+      ),
+    );
+  }
+
+  /// Every installed novel source that is switched on for search, narrowed to
+  /// the ones pinned when this screen is in its default scope.
+  ///
+  /// Novel by provider type rather than by whatever Home is showing: this
+  /// screen is the one place a reader goes to search everything regardless of
+  /// the mode they left Home in.
+  List<({String id, String name, String? lang})> _novelSources() {
+    final all = _switchedOnNovelSources();
+    if (!state.pinnedOnly) return all;
+    // Pinned-first, and it narrows the fan-out rather than just the rows
+    // shown. Searching 49 sites to display the 9 a reader pinned is a lot of
+    // radio and a lot of waiting for rows nobody asked for.
+    return [for (final s in all) if (_isPinned(s.id)) s];
+  }
+
+  /// How many novel sources are actually pinned.
+  ///
+  /// So an empty screen can say "nothing is pinned" - which has a completely
+  /// different fix - instead of implying the title was not found anywhere.
+  int pinnedNovelSourceCount() =>
+      _switchedOnNovelSources().where((s) => _isPinned(s.id)).length;
+
+  /// Installed novel sources that are switched on for search, unscoped.
+  List<({String id, String name, String? lang})> _switchedOnNovelSources() {
+    final languages = _languages;
+    // The Z Mode pseudo-source is dropped before anything asks what type it is.
+    //
+    // It types as novel while browsing novels, and its display name is whatever
+    // catalogue is configured - AniList, MAL, TMDB - but it is a list of
+    // canonical entries, not a place a novel can be read from. Left in, it is
+    // the one section a reader sees, and it answers with metadata rather than
+    // with anything they could open.
+    //
+    // Excluded by id rather than by type, because its type is exactly the thing
+    // that is misleading here.
+    final candidates = {
+      for (final s in _repo.loadedSources)
+        if (s.id != ZmodeIds.sourceId) s.id: s,
+    };
+    final eligible = filterSourcesForMode(
+      candidates,
+      ContentMode.novel,
+      (s) => sourceTypeOf(s.id),
+    ).values;
+    return [
+      for (final s in eligible)
+        if (_prefs.isIncluded(s.id))
+          (id: s.id, name: s.name, lang: languages[s.id]),
+    ];
+  }
+
+  /// Novel sources that exist but are switched off for search.
+  ///
+  /// Reported alongside the empty state so "all of them are off" is a
+  /// different sentence from "you have none" - one is a setting, the other is
+  /// an install.
+  List<({String id, String name, String? lang})> _excludedNovelSources() {
+    final excluded = <({String id, String name, String? lang})>[];
+    for (final s in _repo.loadedSources) {
+      if (s.id == ZmodeIds.sourceId) continue;
+      if (!ContentMode.novel.matchesProvider(sourceTypeOf(s.id))) continue;
+      if (_prefs.isIncluded(s.id)) continue;
+      excluded.add((id: s.id, name: s.name, lang: _languages[s.id]));
+    }
+    return excluded;
+  }
+
+  /// Pinned only, which is the narrowing Reikai offers.
+  ///
+  /// Changing it re-runs the current query: the fan-out is scoped to the same
+  /// set, so widening to every source has to actually go and ask them. The
+  /// returned future is that search, so a caller that is about to go away can
+  /// wait for it instead of racing it.
+  Future<void> setPinnedOnly(bool value) {
+    if (state.pinnedOnly == value) return Future<void>.value();
+    emit(state.copyWith(pinnedOnly: value));
+    final q = state.query;
+    if (q.isEmpty) return Future<void>.value();
+    return search(q);
+  }
+
+  /// Hide the sources that finished with nothing.
+  ///
+  /// Only meaningful once the search has settled - hiding a row that is still
+  /// loading would make the page look finished before it is.
+  void setHideEmpty(bool value) {
+    if (state.hideEmpty == value) return;
+    emit(state.copyWith(hideEmpty: value));
+  }
+
+  /// The rows to show, under the current filters.
+  List<NovelSourceGroup> visibleGroups() {
+    final settled = !state.searching;
+    return [
+      for (final g in state.groups)
+        if (!state.pinnedOnly || _isPinned(g.sourceId))
+          if (!state.hideEmpty ||
+              !settled ||
+              g.status == NovelSourceStatus.hits)
+            g,
+    ];
+  }
+
+  @override
+  Future<void> close() {
+    _debounceTimer?.cancel();
+    return super.close();
+  }
+}
+
+class NovelGlobalSearchState {
+  const NovelGlobalSearchState({
+    this.query = '',
+    this.searching = false,
+    this.noSources = false,
+    this.sourceCount = 0,
+    this.excludedCount = 0,
+    this.pinnedOnly = true,
+    this.hideEmpty = false,
+    this.groups = const [],
+  });
+
+  final String query;
+  final bool searching;
+
+  /// Nothing to search at all - no novel sources installed, or all switched
+  /// off for search. Distinct from "searched and found nothing".
+  final bool noSources;
+
+  /// Novel sources that exist and are searchable, before the query ran.
+  ///
+  /// Shown so an empty screen can say "searched 7 sources" instead of
+  /// leaving the reader to wonder whether anything was tried.
+  final int sourceCount;
+
+  /// Novel sources that exist but are switched off for search - the difference
+  /// between "none installed" and "none switched on".
+  final int excludedCount;
+
+  /// Search the pinned sources only. The default: the sources a reader pinned
+  /// are the ones they expect to answer, and fanning out to every installed
+  /// extension to fill a list they did not ask for is slower and noisier.
+  /// Cleared by tapping "All sources".
+  final bool pinnedOnly;
+  final bool hideEmpty;
+  final List<NovelSourceGroup> groups;
+
+  /// Nothing at all came back, and every source got a real answer.
+  bool get allEmpty =>
+      !searching &&
+      !noSources &&
+      groups.isNotEmpty &&
+      groups.every((g) => g.status == NovelSourceStatus.empty);
+
+  NovelGlobalSearchState copyWith({
+    String? query,
+    bool? searching,
+    bool? noSources,
+    int? sourceCount,
+    int? excludedCount,
+    bool? pinnedOnly,
+    bool? hideEmpty,
+    List<NovelSourceGroup>? groups,
+  }) => NovelGlobalSearchState(
+    query: query ?? this.query,
+    searching: searching ?? this.searching,
+    noSources: noSources ?? this.noSources,
+    sourceCount: sourceCount ?? this.sourceCount,
+    excludedCount: excludedCount ?? this.excludedCount,
+    pinnedOnly: pinnedOnly ?? this.pinnedOnly,
+    hideEmpty: hideEmpty ?? this.hideEmpty,
+    groups: groups ?? this.groups,
+  );
+}

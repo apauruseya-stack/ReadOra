@@ -1,0 +1,127 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+import 'package:watch_app/core/ui/splash_style.dart';
+
+void main() {
+  late Directory tmp;
+
+  setUp(() async {
+    tmp = await Directory.systemTemp.createTemp('splash_style');
+    Hive.init(tmp.path);
+    await Hive.openBox(SplashStyle.boxName);
+  });
+
+  tearDown(() async {
+    await Hive.deleteFromDisk();
+    if (await tmp.exists()) await tmp.delete(recursive: true);
+  });
+
+  test('an untouched install still gets the wordmark', () {
+    // The whole point of the default: adding this feature must not change what
+    // an existing user sees at launch.
+    expect(SplashStyle.selectedId, 'wordmark');
+    expect(SplashStyle.defaultId, 'wordmark');
+  });
+
+  test('a choice is remembered', () async {
+    await SplashStyle.select('wordmark');
+    expect(SplashStyle.selectedId, 'wordmark');
+  });
+
+  test('an id this build no longer ships falls back to the default', () async {
+    Hive.box(SplashStyle.boxName).put('splashStyleId', 'some-old-style');
+    expect(SplashStyle.selectedId, 'wordmark');
+  });
+
+  test('a previously-shipped id resolves to the default, not a blank splash',
+      () async {
+    // 'bankai' was a real option drawn from the upstream project's logo. The id
+    // is gone from [options], so a device that still has it stored must land on
+    // the wordmark rather than fall through to whatever build selectedId returns
+    // for unknown ids.
+    Hive.box(SplashStyle.boxName).put('splashStyleId', 'bankai');
+    expect(SplashStyle.selectedId, SplashStyle.defaultId);
+    expect(SplashStyle.selectedId, isNotEmpty);
+  });
+
+  test('a non-string value falls back rather than throwing', () {
+    Hive.box(SplashStyle.boxName).put('splashStyleId', 42);
+    expect(SplashStyle.selectedId, 'wordmark');
+  });
+
+  test('an unknown id is refused, not stored', () async {
+    await SplashStyle.select('wordmark');
+    await SplashStyle.select('nonsense');
+    expect(SplashStyle.selectedId, 'wordmark');
+  });
+
+  test('the default option exists and leads the list', () {
+    expect(SplashStyle.options.first.id, SplashStyle.defaultId);
+  });
+
+  test('ids are unique — they key the stored preference', () {
+    final ids = SplashStyle.options.map((o) => o.id).toList();
+    expect(ids.toSet().length, ids.length);
+  });
+
+  test('every option ships the wordmark it names', () {
+    // The splash and its preview card both draw option.asset. A missing file
+    // does not throw at build time - Flutter logs and paints an error box - so
+    // the splash would come up blank on every cold start instead of failing.
+    for (final o in SplashStyle.options) {
+      expect(
+        File(o.asset).existsSync(),
+        isTrue,
+        reason: '${o.id} points at a missing wordmark: ${o.asset}',
+      );
+    }
+  });
+
+  test('the options really are different images', () {
+    // Two styles pointing at one asset would be a silent no-op: the picker
+    // would offer a choice that changes nothing on screen.
+    final assets = SplashStyle.options.map((o) => o.asset).toSet();
+    expect(assets.length, SplashStyle.options.length);
+  });
+
+  group('selectedOption', () {
+    test('resolves the stored choice to its option', () async {
+      await SplashStyle.select('wordmark_bold');
+      expect(SplashStyle.selectedOption.id, 'wordmark_bold');
+      expect(SplashStyle.selectedOption.asset, 'assets/icon/wordmark_bold.png');
+    });
+
+    test('resolves an id this build no longer ships to the default', () {
+      Hive.box(SplashStyle.boxName).put('splashStyleId', 'bankai');
+      expect(SplashStyle.selectedOption.id, SplashStyle.defaultId);
+    });
+
+    test('is an option even before the box is open', () async {
+      // Read from the splash build while initDependencies() is still opening
+      // boxes. selectedId already tolerates the closed box; this asserts the
+      // caller cannot be handed null either.
+      await Hive.close();
+      expect(() => SplashStyle.selectedOption, returnsNormally);
+      expect(SplashStyle.selectedOption.id, SplashStyle.defaultId);
+    });
+  });
+
+  group('read before the box is open', () {
+    // The splash is on screen WHILE initDependencies() is still opening boxes,
+    // so this is genuinely read against a closed box. Hive.box() throws there,
+    // and a throw inside the splash's build is a blank screen on every single
+    // cold start — which is exactly what shipped before this guard existed.
+    test('falls back to the default instead of throwing', () async {
+      await Hive.close();
+      expect(() => SplashStyle.selectedId, returnsNormally);
+      expect(SplashStyle.selectedId, SplashStyle.defaultId);
+    });
+
+    test('a write against a closed box is a no-op, not a crash', () async {
+      await Hive.close();
+      await expectLater(SplashStyle.select('wordmark'), completes);
+    });
+  });
+}

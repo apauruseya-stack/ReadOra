@@ -1,0 +1,133 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
+
+import '../zmode/zmode_ids.dart';
+import '../../features/detail/detail_screen.dart';
+import '../di/injector.dart';
+import '../mode/mode_policy.dart';
+import '../models/media_item.dart';
+import '../platform/apple_tv.dart';
+import '../repository/source_repository.dart';
+import '../ui/global_messenger.dart';
+import 'local_video_link.dart';
+import 'share_link.dart';
+
+/// Listens for incoming share links (`zangetsu://open?…`) and pairing links
+/// (`zangetsu://pair?…` or `https://zangetsu.online/pair/?…`) and opens the
+/// matching screen. Tracker OAuth listeners share the same [AppLinks] stream
+/// and ignore anything they don't own.
+class OpenLinkService {
+  OpenLinkService() {
+    // app_links has no tvOS implementation — listening throws MissingPluginException.
+    if (isAppleTv) return;
+    _sub = _appLinks.uriLinkStream.listen(_onLink, onError: (_) {});
+    // Cold start: the browser/OS may have launched the app straight to the link.
+    _appLinks
+        .getInitialLink()
+        .then((uri) {
+          if (uri != null) _onLink(uri);
+        })
+        .catchError((_) {});
+  }
+
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _sub;
+
+  /// A link can arrive before the app is ready for it — see [appShellReady],
+  /// which explains both ways a cold launch used to lose the screen it opened.
+  ///
+  /// Holding every link there fixes all three handlers at once; the local
+  /// video one is simply the easiest to hit, since a file manager is usually
+  /// what cold-starts the app.
+  void _onLink(Uri uri) {
+    appShellReady.then((_) => _route(uri));
+  }
+
+  void _route(Uri uri) {
+    // A local video handed over from a file manager / Downloads ("Open with").
+    // Checked first because it's the one case that can't be a zangetsu:// or
+    // https:// link, so it can never shadow the handlers below.
+    if (LocalVideoLink.matches(uri)) {
+      _openLocalVideo(uri);
+      return;
+    }
+    // zangetsu://pair?... used to be the TV pairing / tracker-relay link.
+    // Pairing is gone, so such a link is no longer an open-link and falls
+    // through to the ShareLink check below (which will not match it either).
+    final item = ShareLink.parse(uri);
+    if (item == null) return; // not an open-link (or another handler's link)
+    _open(item);
+  }
+
+  /// Play a file the OS handed us. Same cold-start-safe wait for the root
+  /// Navigator as the handlers below — a cold launch delivers the link before
+  /// there is anything to push onto.
+  void _openLocalVideo(Uri uri, [int attempt = 0]) {
+    final nav = rootNavigatorKey.currentState;
+    if (nav == null) {
+      if (attempt < 20) {
+        Future.delayed(
+          const Duration(milliseconds: 250),
+          () => _openLocalVideo(uri, attempt + 1),
+        );
+      }
+      return;
+    }
+    nav.push(LocalVideoLink.route(uri));
+  }
+
+  /// Waits (briefly, cold-start safe) for the root Navigator to exist, then
+  /// either opens the Detail or shows a "source not installed" toast.
+  void _open(MediaItem item, [int attempt = 0]) {
+    final nav = rootNavigatorKey.currentState;
+    if (nav == null) {
+      if (attempt < 20) {
+        Future.delayed(
+          const Duration(milliseconds: 250),
+          () => _open(item, attempt + 1),
+        );
+      }
+      return;
+    }
+    if (!_sourceInstalled(item.sourceId)) {
+      showGlobalSnack(
+        "That title's source isn't installed. Add it in Settings › Providers.",
+      );
+      return;
+    }
+    // External links bypass every in-app mode switcher, so the novel-only
+    // policy is checked at this ingress point rather than in the UI that a
+    // link never visits. Streaming, movie, and manga titles cannot be opened
+    // in this build, even when their source happens to be installed.
+    if (!ModePolicy.isMediaItemRouteAllowed(item)) {
+      showGlobalSnack(
+        "That title isn't available in the novel-only build.",
+      );
+      return;
+    }
+    nav.push(DetailScreen.route(item));
+  }
+
+  bool _sourceInstalled(String sourceId) {
+    // The metadata catalogue is not an installed source and never can be, so
+    // asking the source registry about it always said no — and a shared
+    // AniList/TMDB title was refused with "add it in Settings", naming
+    // something the recipient cannot install. The link resolves through
+    // MetadataRepository regardless of what they have installed.
+    if (sourceId == ZmodeIds.sourceId) return true;
+    try {
+      // Canonical check across cs:/ani:/JS ids (CS also matches a compatible
+      // repo/version). The old code only knew cs: + JS, so every Aniyomi
+      // (`ani:`) share fell through to the JS registry and wrongly reported
+      // "not installed".
+      return sl<SourceRepository>().hasSource(sourceId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void dispose() {
+    _sub?.cancel();
+  }
+}

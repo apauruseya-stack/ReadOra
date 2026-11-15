@@ -1,0 +1,536 @@
+import 'package:flutter/material.dart';
+import 'package:watch_app/core/reading/tts/narration_filter.dart';
+import 'package:watch_app/core/reading/tts/sentence_parser.dart';
+
+import 'novel_html.dart';
+
+/// Turns a chapter's rendered text into read-aloud sentences whose offsets line
+/// up with what the reader draws.
+///
+/// Lives in `features/reader` rather than in the parser because it is the seam
+/// between two representations: the parser knows about sentences, the reader
+/// knows about tokens and spans, and only here do the two meet. Keeping the
+/// mapping out of both is what stops a highlight from drifting onto the wrong
+/// words after an unrelated change to either side.
+class TtsAlignedChapter {
+  const TtsAlignedChapter({required this.layout, required this.sentences});
+
+  final NovelTextLayout layout;
+
+  /// One entry per sentence, in reading order. Each [TtsSentence]'s
+  /// `startIndex`/`endIndex` are offsets into [NovelTextLayout.text].
+  final List<TtsSentence> sentences;
+
+  int get total => sentences.length;
+  bool get isEmpty => sentences.isEmpty;
+
+  TtsSentence? at(int i) =>
+      (i >= 0 && i < sentences.length) ? sentences[i] : null;
+
+  /// The half-open range of the sentence at [i], or null when out of range.
+  ({int start, int end})? rangeAt(int i) {
+    final s = at(i);
+    return s == null ? null : (start: s.startIndex, end: s.endIndex);
+  }
+}
+
+/// Segments [layout]'s text into sentences, one block at a time, skipping
+/// headings.
+///
+/// ### Per block, not per chapter
+/// Segmented a block at a time rather than over the whole chapter text. A
+/// sentence that runs across a paragraph boundary is a real failure, not a
+/// cosmetic one: with `<p>Chapter 2: Comparison</p><p>Funny how much…</p>` the
+/// colon splits after "Chapter 2", so the next sentence began at "Comparison"
+/// and ran on into the first paragraph — narration opened by reading the
+/// chapter title, glued to the first line of the story.
+///
+/// It also makes this path agree with the speech-only path used when narration
+/// rolls into the next chapter, which already segmented per block. The two
+/// counting sentences differently meant the same chapter could segment two
+/// different ways depending on how you arrived at it.
+///
+/// ### Headings and notes are not spoken
+/// A chapter title is metadata, not prose. Reading "Chapter one" before every
+/// chapter is the kind of thing that makes a narrator sound broken, so heading
+/// blocks are dropped from the spoken list entirely rather than being spoken or
+/// attached to the sentence after them. The same goes for a block that is an
+/// author's note or a translator's bracket: a note runs to several sentences,
+/// so it has to be judged as a block or the rest of it still gets read out.
+///
+/// Position comes from the *non-heading* blocks. A chapter is usually title
+/// then note then story, so counting the heading as the first block would put
+/// the note second and out of reach of the note rules.
+/// Segments [layout]'s text into sentences, one block at a time, skipping
+/// headings.
+///
+/// [narrationFilter] is on for the list read-aloud speaks and off for the list
+/// the reader hit-tests against. A long press has to be able to find the
+/// sentence under the finger whatever it says — and the sentences the filter
+/// drops are exactly the ones somebody most wants to hide, so filtering them out
+/// of the list a long press searches is how "hide this sentence" would come up
+/// empty on every ad in the book.
+TtsAlignedChapter alignChapter(
+  NovelTextLayout layout, {
+  bool narrationFilter = true,
+}) {
+  final out = <TtsSentence>[];
+
+  final prose = <NovelBlockRange>[];
+  for (final block in layout.blocks) {
+    if (!layout.isHeadingBlock(block.index)) prose.add(block);
+  }
+
+  for (var i = 0; i < prose.length; i++) {
+    final block = prose[i];
+    // The block's own slice, so offsets stay absolute and the highlighter keeps
+    // working. The trailing newline that separates blocks is left to the block
+    // before it.
+    final slice = layout.text.substring(block.start, block.end);
+    if (narrationFilter &&
+        NarrationFilter.skipBlock(
+          slice,
+          blockIndex: i,
+          blockCount: prose.length,
+        )) {
+      continue;
+    }
+    for (final s in SentenceParser.parseRaw(
+      slice,
+      narrationFilter: narrationFilter,
+    )) {
+      out.add(
+        TtsSentence(
+          text: s.text,
+          // Shift into chapter coordinates: a sentence is located in the whole
+          // chapter, not in the block it was found in.
+          startIndex: s.startIndex + block.start,
+          endIndex: s.endIndex + block.start,
+          index: out.length,
+          pauseAfterMs: s.pauseAfterMs,
+          blockIndex: block.index,
+        ),
+      );
+    }
+  }
+
+  return TtsAlignedChapter(layout: layout, sentences: out);
+}
+
+/// The range a long press at [offset] should offer to hide.
+///
+/// Prefers the read-aloud sentence covering the offset: it is the same list the
+/// panel quotes, so the sentence someone highlights by touch is the sentence
+/// they would hear.
+///
+/// Falls back to the whole block when no sentence covers it. That fallback is
+/// not defensive padding — it is the only way a heading block can be reached at
+/// all. Read-aloud skips headings, so a source that marks its injected line up
+/// as `<h3>` produces text that is plainly on screen and absent from
+/// [sentences]; asking only the sentence list made such a line impossible to
+/// hide, and the long press ended in silence with no dialog to explain why.
+///
+/// Returns null when the offset is outside the chapter or in the gap between
+/// blocks, where there is nothing under the finger to hide.
+({String text, int start, int end, int blockIndex})? hideableRangeAt(
+  NovelTextLayout layout,
+  int offset,
+  List<TtsSentence> sentences,
+) {
+  if (offset < 0 || offset >= layout.length) return null;
+  for (final s in sentences) {
+    if (offset >= s.startIndex && offset < s.endIndex) {
+      return (
+        text: layout.text.substring(s.startIndex, s.endIndex).trim(),
+        start: s.startIndex,
+        end: s.endIndex,
+        blockIndex: s.blockIndex,
+      );
+    }
+  }
+  final index = layout.blockAt(offset);
+  if (index < 0 || index >= layout.blocks.length) return null;
+  final block = layout.blocks[index];
+  if (offset < block.start || offset >= block.end) return null;
+  return (
+    text: block.textOf(layout),
+    start: block.start,
+    end: block.end,
+    blockIndex: block.index,
+  );
+}
+
+/// Converts a body-local touch y-coordinate to the scroll content coordinate
+/// used by the measured block offsets.
+///
+/// The reader's body sits inside a `SafeArea`, so a finger's y on screen and the
+/// scroll offset it belongs to are in two different coordinate spaces. Adding
+/// them without taking the inset out first lands the lookup a notch too low,
+/// which is why a long press could resolve to the wrong sentence — or to the
+/// gap between paragraphs, where nothing resolves at all.
+///
+/// Pure and exported so the arithmetic is testable without a widget tree.
+double scrollContentYForReaderPosition({
+  required double bodyY,
+  required double safeAreaTop,
+  required double scrollOffset,
+}) => bodyY - safeAreaTop + scrollOffset;
+
+/// Converts a body-local touch y-coordinate to the page text's local y.
+///
+/// The paged reader has one more thing between the body and the text: the
+/// [padding] above the first line of the page.
+double pageTextYForReaderPosition({
+  required double bodyY,
+  required double safeAreaTop,
+  required double contentTopPadding,
+}) => bodyY - safeAreaTop - contentTopPadding;
+
+/// The spans for one block of [layout], with an optional highlighted range.
+///
+/// ### Why scroll mode builds its own spans instead of using `HtmlWidget`
+///
+/// The scrolling reader hands its chapter straight to `HtmlWidget`, which owns
+/// the text — and a widget that owns the text cannot be handed a decorated copy
+/// of it. Reikai solves this by rendering the chapter in a WebView and toggling
+/// a CSS class on the DOM element. That is a sound approach and much simpler
+/// than a source map: it highlights whole paragraphs, because a DOM element is
+/// the smallest thing a CSS class can go on.
+///
+/// We already hold something finer than that — a character range for the exact
+/// sentence — so the alternative here was to map plain-text offsets back into
+/// HTML source positions and re-inject a styled span on every sentence. That
+/// map has to survive `&amp;`-style entities, and getting it subtly wrong puts
+/// a highlight on the wrong words, which is worse than no highlight at all.
+///
+/// So this builds the block's spans from the *same* [NovelTextLayout] the
+/// sentences were segmented from, and decorates with [_applyRange] — the
+/// function the paged path already uses and that the offset tests already
+/// cover. One token walk, one source of truth, exact sentence granularity.
+List<InlineSpan> novelBlockSpans(
+  NovelTextLayout layout,
+  int blockIndex, {
+  required TextStyle base,
+  int? highlightStart,
+  int? highlightEnd,
+  TextStyle? highlight,
+}) {
+  final blocks = layout.blocks;
+  if (blockIndex < 0 || blockIndex >= blocks.length) return const [];
+  final block = blocks[blockIndex];
+
+  final spans = <InlineSpan>[];
+  for (var i = 0; i < layout.tokens.length; i++) {
+    final tokenStart = layout.tokenStart(i);
+    if (tokenStart >= block.end) break;
+    final t = layout.tokens[i];
+    final tokenEnd = tokenStart + layout.tokenLength(i);
+    if (tokenEnd <= block.start) continue;
+    if (t.isBreak) {
+      // A `<br>` inside the block: a soft line break, kept as a newline.
+      spans.add(const TextSpan(text: '\n'));
+      continue;
+    }
+    // A token can straddle a block edge; clip so the block renders only its own
+    // characters. That is what keeps the block's plain text equal to the block's
+    // slice of the layout text, which is the invariant the offsets rest on.
+    final from = block.start > tokenStart ? block.start - tokenStart : 0;
+    final to = block.end < tokenEnd ? block.end - tokenStart : t.text.length;
+    if (to <= from) continue;
+    spans.add(
+      TextSpan(
+        text: t.text.substring(from, to),
+        style: base.copyWith(
+          fontWeight: t.bold ? FontWeight.bold : null,
+          fontStyle: t.italic ? FontStyle.italic : null,
+        ),
+      ),
+    );
+  }
+
+  if (highlight == null || highlightStart == null || highlightEnd == null) {
+    return spans;
+  }
+  final from = highlightStart < block.start ? block.start : highlightStart;
+  final to = highlightEnd > block.end ? block.end : highlightEnd;
+  if (to <= from) return spans;
+
+  return [
+    _applyRange(
+      TextSpan(style: base, children: spans),
+      from - block.start,
+      to - block.start,
+      highlight,
+      0,
+    ),
+  ];
+}
+
+/// The block of [layout] containing character offset [offset], or null.
+int? blockIndexForOffset(NovelTextLayout layout, int offset) {
+  if (offset < 0 || offset >= layout.length) return null;
+  for (final b in layout.blocks) {
+    if (offset >= b.start && offset < b.end) return b.index;
+  }
+  return null;
+}
+
+/// The part of `[start, end)` that falls inside block [blockIndex], rebased to
+/// that block's own text — or null when the range misses it entirely.
+///
+/// The highlight box is painted per block and per page, so each of them has to
+/// answer this for itself: a sentence is stored once, in chapter coordinates,
+/// but the thing being drawn is a single block or a single page.
+({int from, int to})? blockSliceFor(
+  NovelTextLayout layout,
+  int blockIndex,
+  int start,
+  int end,
+) {
+  if (end <= start) return null;
+  if (blockIndex < 0 || blockIndex >= layout.blocks.length) return null;
+  final block = layout.blocks[blockIndex];
+  final from = start < block.start ? block.start : start;
+  final to = end > block.end ? block.end : end;
+  if (to <= from) return null;
+  return (from: from - block.start, to: to - block.start);
+}
+
+/// The part of `[start, end)` that falls on page [pageIndex], rebased to that
+/// page's own text — or null when the range misses it.
+///
+/// The paged-mode counterpart of [blockSliceFor]. Pages are contiguous slices of
+/// the chapter in the order [paginateSpans] produced them, so the same
+/// accumulate-and-clip walk resolves a chapter offset to a page one.
+({int from, int to})? pageSliceFor(
+  List<TextSpan> pages,
+  int pageIndex,
+  int start,
+  int end,
+) {
+  if (end <= start) return null;
+  if (pageIndex < 0 || pageIndex >= pages.length) return null;
+  var pageStart = 0;
+  for (var i = 0; i < pages.length; i++) {
+    final pageEnd = pageStart + pages[i].toPlainText().length;
+    if (i == pageIndex) {
+      final from = start < pageStart ? pageStart : start;
+      final to = end > pageEnd ? pageEnd : end;
+      return to > from ? (from: from - pageStart, to: to - pageStart) : null;
+    }
+    if (start < pageStart) return null; // gap: the range precedes this page
+    pageStart = pageEnd;
+  }
+  return null;
+}
+
+/// Cumulative top offset of every block: `_offsets[i]` is block `i`'s y, and
+/// the final entry is the whole chapter's height.
+///
+/// ### Why this has to be measured
+///
+/// Following the sentence in a scrolling reader needs the y of a block that may
+/// not be on screen — and a `SliverList` does not build the blocks off screen,
+/// so the block holding the spoken sentence has no widget to ask. Measuring the
+/// chapter once is the only way to reach a block that has never been laid out.
+///
+/// Measured with the same painter the paginator uses, so these are the offsets
+/// the scroll view actually produces rather than an estimate: a follow built on
+/// an approximation lands a paragraph out on every sentence, which is worse
+/// than not following at all.
+///
+/// Costs one text layout per block, so callers measure once per chapter and
+/// cache — never per sentence.
+List<double> measureBlockOffsets(
+  NovelTextLayout layout, {
+  required TextStyle style,
+  required double width,
+  required double paragraphSpacing,
+  required TextDirection textDirection,
+  TextScaler textScaler = TextScaler.noScaling,
+}) {
+  final offsets = <double>[];
+  var total = 0.0;
+  for (final b in layout.blocks) {
+    offsets.add(total);
+    final painter = TextPainter(
+      text: TextSpan(
+        style: style,
+        children: novelBlockSpans(layout, b.index, base: style),
+      ),
+      textDirection: textDirection,
+      textScaler: textScaler,
+      textAlign: TextAlign.start,
+    )..layout(maxWidth: width);
+    total += painter.height + paragraphSpacing;
+    painter.dispose();
+  }
+  offsets.add(total);
+  return offsets;
+}
+
+/// The page holding the start of the chapter range `[start, end)`, or null when
+/// the range falls outside the page list.
+///
+/// This is what makes read-aloud usable in paged mode without the user touching
+/// anything: a spoken sentence that has moved onto the next page is invisible
+/// until the page turns, so the highlight is happening somewhere the reader
+/// cannot see. Turning to the sentence keeps reading along with the voice.
+///
+/// Returns null rather than clamping, so the caller can tell "this sentence is
+/// not on any page" (misaligned input, empty pagination) apart from "it is on
+/// the page we are already showing", and leave the reader alone in both cases.
+int? pageIndexForRange(List<TextSpan> pages, int start, int end) {
+  if (end <= start) return null;
+  var pageStart = 0;
+  for (var i = 0; i < pages.length; i++) {
+    final pageEnd = pageStart + pages[i].toPlainText().length;
+    if (start >= pageStart && start < pageEnd) {
+      // A sentence running past the page edge still belongs to the page it
+      // *starts* on: turning to where it began is the least jarring, and the
+      // next sentence will move the page again.
+      return i;
+    }
+    if (start < pageStart) return null; // gap: offset precedes these pages
+    pageStart = pageEnd;
+  }
+  return null;
+}
+
+/// The scroll offset that places a sentence's first line at the desired
+/// viewport anchor, or null when it is already close enough.
+///
+/// [contentTopInset] accounts for padding before the first block. Screen-space
+/// y is content-space y minus the current scroll offset; keeping that conversion
+/// here makes it harder for the reader's follow logic to accidentally invert
+/// the scroll direction.
+double? ttsFollowScrollTarget({
+  required double blockOffset,
+  required double sentenceOffset,
+  required double contentTopInset,
+  required double scrollOffset,
+  required double viewportHeight,
+  required double anchorFraction,
+  required double toleranceFraction,
+  required double minScrollExtent,
+  required double maxScrollExtent,
+}) {
+  if (viewportHeight <= 0) return null;
+  final contentY = contentTopInset + blockOffset + sentenceOffset;
+  final anchor = viewportHeight * anchorFraction;
+  final onScreen = contentY - scrollOffset;
+  if ((onScreen - anchor).abs() <= viewportHeight * toleranceFraction) {
+    return null;
+  }
+  return (contentY - anchor).clamp(minScrollExtent, maxScrollExtent).toDouble();
+}
+
+/// Repaints `[start, end)` (offsets into the chapter's text) across the page
+/// spans produced by `paginateSpans`.
+///
+/// ### Why this does not re-paginate
+/// Pages are laid out once and cached; measuring a whole chapter again on every
+/// sentence — several times a minute — would stutter the very page the user is
+/// trying to read along with. A background colour changes no metrics, so the
+/// existing page boundaries stay valid and the highlight is applied as a
+/// decoration when the page is built for display.
+///
+/// ### Page offsets
+/// `paginateSpans` returns contiguous, non-overlapping slices, so page *n*'s
+/// global range starts exactly where page *n-1* ended. That is what lets a
+/// chapter-level offset be resolved to a page without the paginator having to
+/// report anything new.
+List<TextSpan> highlightPages(
+  List<TextSpan> pages,
+  int chapterStart,
+  int chapterEnd, {
+  required TextStyle highlight,
+}) {
+  if (chapterEnd <= chapterStart) return pages;
+
+  final out = <TextSpan>[];
+  var pageStart = 0;
+  for (final page in pages) {
+    final length = page.toPlainText().length;
+    final pageEnd = pageStart + length;
+    final from = chapterStart > pageStart ? chapterStart : pageStart;
+    final to = chapterEnd < pageEnd ? chapterEnd : pageEnd;
+
+    out.add(
+      to > from
+          ? _applyRange(page, from - pageStart, to - pageStart, highlight, 0)
+          : page,
+    );
+    pageStart = pageEnd;
+  }
+  return out;
+}
+
+/// Splits the span tree so `[start, end)` — page-relative — carries
+/// [highlight].
+///
+/// Recursive rather than a flat re-slice because a page span is a tree of styled
+/// runs: a bold run inside the highlighted range must stay bold *and* gain the
+/// background, which merging styles top-down does. [pageOffset] is how much text
+/// precedes this subtree within the page, so each descendant can work in
+/// absolute terms.
+/// [span] with [style] merged over the character range `[start, end)`.
+///
+/// The public face of [_applyRange] for callers that hold a finished span tree
+/// rather than the layout it came from - the read-aloud highlight, which has
+/// to recolour a range inside a page the paginator already built.
+///
+/// Offsets are in [span]'s own plain text. A range that misses the span
+/// entirely returns it unchanged rather than an empty one, so calling this
+/// with a range belonging to another block is a no-op and not a crash.
+TextSpan applyStyleToRange(
+  TextSpan span,
+  int start,
+  int end,
+  TextStyle style,
+) => _applyRange(span, start, end, style, 0);
+
+TextSpan _applyRange(
+  TextSpan span,
+  int start,
+  int end,
+  TextStyle highlight,
+  int pageOffset,
+) {
+  final children = span.children;
+  final text = span.text;
+
+  if (text != null && text.isNotEmpty) {
+    final from = (start - pageOffset).clamp(0, text.length);
+    final to = (end - pageOffset).clamp(0, text.length);
+    if (to <= from) return span;
+    final base = span.style;
+    return TextSpan(
+      style: base,
+      children: [
+        if (from > 0) TextSpan(text: text.substring(0, from), style: base),
+        TextSpan(
+          text: text.substring(from, to),
+          style: base == null ? highlight : base.merge(highlight),
+        ),
+        if (to < text.length) TextSpan(text: text.substring(to), style: base),
+      ],
+    );
+  }
+
+  if (children == null || children.isEmpty) return span;
+
+  final out = <InlineSpan>[];
+  var consumed = pageOffset;
+  for (final child in children) {
+    // A non-TextSpan (a WidgetSpan from paragraph spacing) carries no offsets;
+    // it is passed through untouched, and the text accounting simply skips it.
+    if (child is! TextSpan) {
+      out.add(child);
+      continue;
+    }
+    out.add(_applyRange(child, start, end, highlight, consumed));
+    consumed += child.toPlainText().length;
+  }
+  return TextSpan(style: span.style, children: out);
+}
