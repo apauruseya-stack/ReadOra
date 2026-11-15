@@ -35,7 +35,7 @@ because they do not work on ReadOra.
 <!-- ROSTER:START -->
 | Contributor | Commits | Role |
 |---|---:|---|
-| apauruseya-stack | **135** | **Maintainer — ReadOra's author and sole owner** |
+| apauruseya-stack | **137** | **Maintainer — ReadOra's author and sole owner** |
 
 The roster lists the maintainer only. Upstream authorship from the Zangetsu
 years is preserved in the commit graph, which is never rewritten, and credited
